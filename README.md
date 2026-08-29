@@ -1,24 +1,15 @@
-# CASEVO Upgrade — real product photography + checkout buttons
+# CASEVO Product Assets
 
-This is a static Cloudflare Workers/Pages-compatible site.
+Prepared for the CASEVO website.
 
-## Files
-- index.html
-- style.css
-- script.js
-- assets/ (generated CASEVO product photography)
+## Folder
+- `assets/products/` — optimized WebP product images + `index.json`
+- All product image URLs are root-relative, e.g. `/assets/products/case-002-ck3805-peony-red.webp`
 
-## Make payments live
-Open `script.js` and replace the six:
-- `PASTE_STRIPE_PAYMENT_LINK_*` with Stripe Payment Links
-- `PASTE_SHOPIFY_CHECKOUT_URL_*` with Shopify checkout/product URLs
+## Website integration
+Copy the entire `assets` folder into the CASEVO repository root (or into the project's `public` folder if it is a Vite/Next-style public-assets setup).
 
-The UI already has separate Stripe and Shopify purchase buttons.
+The image files are normalized to square WebP and kept at their original visual framing. The Chinese promotional text embedded in the source images was not altered.
 
-## Deploy
-For your current Cloudflare setup, keep the root directory `/` and deploy the repository as a static site.
-Do not use `npx wrangler deploy` with an `assets.directory` that does not exist.
-If using Workers Static Assets, use `assets.directory: "."` as in `wrangler.jsonc`.
-
-## Important
-The included product photos are generated CASEVO art-direction/product visuals, not photographs of a physical manufactured case. Before commercial launch, replace them with your final factory/product photography if available.
+## Catalog
+19 phone-case assets + 1 screen-protector asset.
