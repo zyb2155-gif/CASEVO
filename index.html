@@ -1,10 +1,10 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="description" content="CASEVO — Chinese tradition, reimagined for modern life. Premium Chinese-inspired phone cases.">
 <meta name="theme-color" content="#f4efe5">
-<meta name="description" content="CASEVO — Chinese-inspired phone cases where traditional art, symbolism and natural landscapes are reimagined for modern life.">
 <title>CASEVO — Chinese Tradition, Reimagined.</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -12,102 +12,160 @@
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
-<div class="announcement">CASEVO / 2026 COLLECTION <span>·</span> CHINESE ART, REIMAGINED</div>
+<div class="announcement">CASEVO / 2026 COLLECTION <span>·</span> FREE SHIPPING ON ORDERS OVER $75</div>
 
 <header class="nav">
-<a class="brand" href="#top"><span class="brand-mark">策</span><span>CASEVO</span></a>
-<nav class="nav-links">
-<a href="#collection">Collection</a><a href="#design">Design</a><a href="#materials">Materials</a><a href="#about">About</a>
-</nav>
-<a class="nav-cta" href="#collection">View collection <span>↗</span></a>
-<button class="menu-btn" aria-label="Open menu" aria-expanded="false">☰</button>
+  <a class="brand" href="#top"><span class="brand-mark">策</span><span>CASEVO</span></a>
+  <nav class="nav-links">
+    <a href="#collection">Collection</a><a href="#design">Design</a><a href="#materials">Materials</a><a href="#about">About</a><a href="#contact">Contact</a>
+  </nav>
+  <div class="nav-tools">
+    <button class="icon-btn" aria-label="Search" onclick="focusSearch()">⌕</button>
+    <a class="icon-btn" href="#collection" aria-label="Account">♙</a>
+    <a class="cart-btn" href="#collection">Cart <span id="cartCount">0</span></a>
+  </div>
+  <button class="menu-btn" aria-label="Open menu">☰</button>
 </header>
 
 <main id="top">
 <section class="hero">
-<div class="hero-copy">
-<div class="eyebrow">CASEVO / 2026</div>
-<h1>Chinese<br>tradition,<br><em>reimagined.</em></h1>
-<p>A curated collection of phone cases inspired by Chinese art, symbolism and natural landscapes.</p>
-<div class="hero-actions">
-<a class="button button-dark" href="#collection">Explore the collection <span>→</span></a>
-<a class="text-link" href="#design">Our design philosophy</a>
-</div>
-</div>
-<div class="hero-art" aria-hidden="true">
-<div class="seal seal-main">策</div><div class="sun"></div><div class="mountain mountain-a"></div><div class="mountain mountain-b"></div>
-<div class="hero-caption">东方美学<br><small>EASTERN AESTHETICS</small></div>
-</div>
+  <div class="hero-copy">
+    <div class="eyebrow">CASEVO / 2026</div>
+    <h1>Chinese<br>tradition,<br><em>reimagined.</em></h1>
+    <p>More than a phone case — a piece of culture. Inspired by Chinese art, crafted for modern life.</p>
+    <div class="hero-actions">
+      <a class="button button-red" href="#collection">Explore collection <span>→</span></a>
+      <a class="text-link" href="#about">Our story →</a>
+    </div>
+  </div>
+  <div class="hero-art">
+    <img src="assets/hero-crane.jpg" alt="CASEVO Chinese-inspired crane phone case">
+    <div class="hero-seal">策</div>
+  </div>
 </section>
 
-<section class="intro section">
-<div class="section-label">01 / THE COLLECTION</div>
-<div class="intro-grid"><h2>Objects with<br><em>meaning.</em></h2>
-<div><p class="lead">CASEVO turns visual language from Chinese culture into contemporary objects for everyday life.</p>
-<p>From mountains and flowing water to seals, flowers and auspicious symbols, each design is distilled rather than copied — keeping the spirit of tradition while giving it a modern silhouette.</p></div></div>
+<section class="collection section" id="collection">
+  <div class="section-head">
+    <div><div class="eyebrow">FEATURED COLLECTION</div><h2>Timeless Designs</h2></div>
+    <span class="rule"></span>
+    <a class="text-link" href="#collection">View all →</a>
+  </div>
+  <div class="product-grid" id="productGrid"></div>
 </section>
 
-<section id="collection" class="collection section">
-<div class="section-head"><div><div class="section-label">02 / COLLECTION</div><h2>Selected works</h2></div><span class="count">06 / 06</span></div>
-<div class="product-grid">
-<article class="product-card" data-product="Mist Mountain"><div class="product-visual visual-mountain"><span>山水</span></div><div class="product-meta"><div><h3>Mist Mountain</h3><p>Shan Shui Series</p></div><strong>$39</strong></div><button class="details-btn">View details ↗</button></article>
-<article class="product-card" data-product="Red Seal"><div class="product-visual visual-seal"><span>福</span></div><div class="product-meta"><div><h3>Red Seal</h3><p>Seal Script Series</p></div><strong>$39</strong></div><button class="details-btn">View details ↗</button></article>
-<article class="product-card" data-product="Jade Bloom"><div class="product-visual visual-bloom"><span>花</span></div><div class="product-meta"><div><h3>Jade Bloom</h3><p>Botanical Series</p></div><strong>$42</strong></div><button class="details-btn">View details ↗</button></article>
-<article class="product-card" data-product="Ink River"><div class="product-visual visual-river"><span>水</span></div><div class="product-meta"><div><h3>Ink River</h3><p>Shan Shui Series</p></div><strong>$39</strong></div><button class="details-btn">View details ↗</button></article>
-<article class="product-card" data-product="Crimson Crane"><div class="product-visual visual-crane"><span>鶴</span></div><div class="product-meta"><div><h3>Crimson Crane</h3><p>Symbolism Series</p></div><strong>$42</strong></div><button class="details-btn">View details ↗</button></article>
-<article class="product-card" data-product="Moon Gate"><div class="product-visual visual-moon"><span>月</span></div><div class="product-meta"><div><h3>Moon Gate</h3><p>Architecture Series</p></div><strong>$39</strong></div><button class="details-btn">View details ↗</button></article>
-</div>
+<section class="story" id="design">
+  <div class="story-image"><img src="assets/hero-crane.jpg" alt=""></div>
+  <div class="story-copy">
+    <div class="eyebrow">OUR STORY</div>
+    <h2>More Than a Case.</h2>
+    <p>CASEVO bridges ancient Chinese artistry and modern technology. Every design carries a symbol — from mountains and rivers to cranes, blossoms and seal script.</p>
+    <p>We create objects for daily life that feel considered, tactile and quietly distinctive.</p>
+    <a class="text-link" href="#about">Learn more →</a>
+  </div>
+  <div class="benefits">
+    <div><b>◉</b><span><strong>Cultural Heritage</strong>Inspired by traditional Chinese art and philosophy.</span></div>
+    <div><b>◇</b><span><strong>Premium Materials</strong>Eco-friendly, durable and made for everyday use.</span></div>
+    <div><b>◌</b><span><strong>Modern Protection</strong>Shock-absorbent construction with precision fit.</span></div>
+  </div>
 </section>
 
-<section id="design" class="design section">
-<div class="section-label">03 / DESIGN</div>
-<div class="design-grid">
-<div class="ink-panel"><div class="ink-ring"></div><div class="ink-character">山</div><p>FORM / BALANCE / SPACE</p></div>
-<div class="design-copy"><h2>Less ornament.<br><em>More story.</em></h2>
-<p>We start with a cultural reference, reduce it to its essential gesture, then rebuild it for a contemporary object.</p>
-<div class="principles">
-<div><span>01</span><b>Symbolism</b><small>Every mark carries a reason.</small></div>
-<div><span>02</span><b>Restraint</b><small>Quiet composition over excess.</small></div>
-<div><span>03</span><b>Modernity</b><small>Designed for everyday use.</small></div>
-</div></div></div>
+<section class="materials section" id="materials">
+  <div class="material-copy">
+    <div class="eyebrow">PREMIUM MATERIALS</div>
+    <h2>Inspired by Nature.</h2>
+    <p>Refined finishes, durable protection and a lighter footprint — designed to age beautifully with you.</p>
+  </div>
+  <div class="material-points">
+    <div><b>Plant-based Finish</b><span>Soft-touch, eco-conscious surface.</span></div>
+    <div><b>Impact Protection</b><span>Shock-absorbent everyday defense.</span></div>
+    <div><b>Precision Fit</b><span>Designed around your device.</span></div>
+  </div>
 </section>
 
-<section id="materials" class="materials section">
-<div class="section-label">04 / MATERIALS</div>
-<div class="materials-head"><h2>Made to be<br><em>held.</em></h2><p>We choose materials for the way they feel in the hand as much as for the way they look.</p></div>
-<div class="material-list">
-<div class="material-item"><span>01</span><h3>Plant-based finish</h3><p>Soft-touch surface with a refined, natural feel.</p></div>
-<div class="material-item"><span>02</span><h3>Impact protection</h3><p>Structured inner shell engineered for daily drops and knocks.</p></div>
-<div class="material-item"><span>03</span><h3>Precision fit</h3><p>Clean edges, responsive buttons and accurate camera clearance.</p></div>
-</div>
+<section class="about section" id="about">
+  <div class="eyebrow">CASEVO / PHILOSOPHY</div>
+  <h2>Objects with meaning.<br><em>Designed to be kept.</em></h2>
+  <p>Chinese aesthetics are not frozen in time. CASEVO translates their balance, symbolism and restraint into contemporary objects.</p>
 </section>
 
-<section id="about" class="about section">
-<div class="section-label">05 / ABOUT CASEVO</div>
-<div class="about-grid"><h2>From heritage<br>to <em>everyday.</em></h2>
-<div><p class="lead">CASEVO is a design label exploring how Chinese visual culture can live naturally in the present.</p>
-<p>We believe tradition does not need to be preserved behind glass. It can be carried, touched and used. Our work is a conversation between old references and new routines.</p>
-<a class="text-link" href="mailto:hello@getcasevo.com">hello@getcasevo.com ↗</a></div></div>
-</section>
-
-<section class="newsletter">
-<div><div class="section-label">06 / STAY CLOSE</div><h2>New designs,<br><em>quietly arriving.</em></h2></div>
-<form id="newsletterForm"><label for="email">Join the CASEVO list</label><div class="email-row"><input id="email" type="email" placeholder="Your email address" required><button type="submit">Join ↗</button></div><small id="formMessage">No noise. Just new collections and stories.</small></form>
+<section class="contact section" id="contact">
+  <div><div class="eyebrow">STAY IN THE LOOP</div><h2>New designs, quietly delivered.</h2></div>
+  <form onsubmit="subscribe(event)"><input id="email" type="email" placeholder="Your email address" required><button>Subscribe →</button></form>
 </section>
 </main>
 
-<footer class="footer">
-<div class="footer-brand"><span class="brand-mark">策</span><b>CASEVO</b><p>Chinese tradition, reimagined.</p></div>
-<div class="footer-links"><a href="#collection">Collection</a><a href="#design">Design</a><a href="#materials">Materials</a><a href="#about">About</a><a href="mailto:hello@getcasevo.com">Contact</a></div>
-<div class="copyright">© 2026 CASEVO. All rights reserved.</div>
+<footer>
+  <div class="brand"><span class="brand-mark">策</span><span>CASEVO</span></div>
+  <div class="footer-links"><a href="#collection">Collection</a><a href="#design">Design</a><a href="#materials">Materials</a><a href="#about">About</a><a href="#contact">Contact</a></div>
+  <small>© 2026 CASEVO. All rights reserved.</small>
 </footer>
 
-<div class="modal" id="productModal" aria-hidden="true">
-<div class="modal-backdrop"></div><div class="modal-box" role="dialog" aria-modal="true">
-<button class="modal-close" aria-label="Close">×</button><div id="modalVisual" class="modal-visual"></div>
-<div class="modal-info"><div class="section-label">CASEVO / SELECTED WORK</div><h2 id="modalTitle">Product</h2><p id="modalText"></p><div class="modal-price" id="modalPrice">$39</div>
-<a class="button button-dark" href="mailto:hello@getcasevo.com?subject=CASEVO%20Product%20Inquiry">Inquire about this design →</a></div>
-</div></div>
+<div class="modal" id="buyModal" aria-hidden="true">
+  <div class="modal-card">
+    <button class="modal-close" onclick="closeBuy()">×</button>
+    <div class="eyebrow">CHECKOUT</div>
+    <h3 id="modalTitle">CASEVO</h3>
+    <p id="modalPrice">$49.00</p>
+    <div class="checkout-options">
+      <a id="stripeBtn" class="checkout stripe" target="_blank" rel="noopener">Buy with Stripe →</a>
+      <a id="shopifyBtn" class="checkout shopify" target="_blank" rel="noopener">Buy with Shopify →</a>
+    </div>
+    <p class="checkout-note">These buttons become live immediately after you paste your Stripe Payment Link and Shopify checkout URL in <code>script.js</code>.</p>
+  </div>
+</div>
+
+<script>
+const PRODUCTS = [
+  {
+    "id": "mist-mountain",
+    "name": "Mist Mountain",
+    "subtitle": "The journey within.",
+    "price": 49,
+    "stripe": "PASTE_STRIPE_PAYMENT_LINK_1",
+    "shopify": "PASTE_SHOPIFY_CHECKOUT_URL_1"
+  },
+  {
+    "id": "red-seal",
+    "name": "Red Seal",
+    "subtitle": "Power in tradition.",
+    "price": 49,
+    "stripe": "PASTE_STRIPE_PAYMENT_LINK_2",
+    "shopify": "PASTE_SHOPIFY_CHECKOUT_URL_2"
+  },
+  {
+    "id": "jade-bloom",
+    "name": "Jade Bloom",
+    "subtitle": "Grace in simplicity.",
+    "price": 49,
+    "stripe": "PASTE_STRIPE_PAYMENT_LINK_3",
+    "shopify": "PASTE_SHOPIFY_CHECKOUT_URL_3"
+  },
+  {
+    "id": "ink-river",
+    "name": "Ink River",
+    "subtitle": "Flow with time.",
+    "price": 49,
+    "stripe": "PASTE_STRIPE_PAYMENT_LINK_4",
+    "shopify": "PASTE_SHOPIFY_CHECKOUT_URL_4"
+  },
+  {
+    "id": "crimson-crane",
+    "name": "Crimson Crane",
+    "subtitle": "Freedom & longevity.",
+    "price": 49,
+    "stripe": "PASTE_STRIPE_PAYMENT_LINK_5",
+    "shopify": "PASTE_SHOPIFY_CHECKOUT_URL_5"
+  },
+  {
+    "id": "moon-gate",
+    "name": "Moon Gate",
+    "subtitle": "A doorway to the future.",
+    "price": 49,
+    "stripe": "PASTE_STRIPE_PAYMENT_LINK_6",
+    "shopify": "PASTE_SHOPIFY_CHECKOUT_URL_6"
+  }
+];
+</script>
 <script src="script.js"></script>
 </body>
 </html>
