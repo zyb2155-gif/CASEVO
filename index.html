@@ -1,0 +1,214 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="description" content="CASEVO AI — AI-powered China sourcing and supplier intelligence for global footwear brands and buyers.">
+  <meta name="theme-color" content="#f5efe3">
+  <title>CASEVO AI — China Sourcing, Reimagined.</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Playfair+Display:wght@500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="topbar">CASEVO AI / CHINA SOURCING INTELLIGENCE <span>•</span> FOOTWEAR & MATERIALS</div>
+
+  <header class="nav">
+    <a class="brand" href="#top" aria-label="CASEVO home">
+      <span class="brand-mark">策</span>
+      <span>CASEVO <small>AI</small></span>
+    </a>
+    <nav class="nav-links">
+      <a href="#sourcing">AI Sourcing</a>
+      <a href="#how">How It Works</a>
+      <a href="#score">CASEVO Score</a>
+      <a href="#report">Reports</a>
+    </nav>
+    <a class="nav-cta" href="#sourcing">Start Sourcing →</a>
+    <button class="menu-btn" aria-label="Open menu" onclick="toggleMenu()">☰</button>
+  </header>
+
+  <main id="top">
+    <section class="hero">
+      <div class="hero-copy">
+        <div class="eyebrow">AI-POWERED CHINA SOURCING</div>
+        <h1>Find the right<br>China supplier<br><em>faster.</em></h1>
+        <p class="hero-lead">
+          CASEVO combines AI supplier intelligence with local China sourcing expertise
+          to help global footwear buyers discover, evaluate and connect with qualified suppliers.
+        </p>
+        <div class="hero-actions">
+          <a class="button button-red" href="#sourcing">Start AI Sourcing <span>→</span></a>
+          <a class="text-link" href="#how">See how it works →</a>
+        </div>
+        <div class="trust-row">
+          <span>FOOTWEAR</span><i>•</i><span>LEATHER</span><i>•</i><span>COMPONENTS</span><i>•</i><span>CHINA</span>
+        </div>
+      </div>
+
+      <div class="hero-panel">
+        <div class="panel-seal">策</div>
+        <div class="panel-label">CASEVO / SOURCING ENGINE</div>
+        <div class="signal">
+          <span class="signal-dot"></span>
+          <span>Ready to analyze a sourcing request</span>
+        </div>
+        <div class="mini-request">
+          <span class="mini-label">EXAMPLE REQUEST</span>
+          <p>“Premium full-grain leather for men's sneakers, 1.4mm, black, 5,000 pairs.”</p>
+        </div>
+        <div class="mini-output">
+          <div><span>Supplier Match</span><strong>94%</strong></div>
+          <div><span>CASEVO Score</span><strong>86 / 100</strong></div>
+          <div><span>Verification</span><strong>Human Review</strong></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="sourcing section" id="sourcing">
+      <div class="section-head">
+        <div>
+          <div class="eyebrow">01 / AI SOURCING</div>
+          <h2>Tell us what you need.</h2>
+        </div>
+        <p>Start with a product, material or manufacturing requirement. The MVP below demonstrates the workflow; live supplier intelligence will be connected in the next phase.</p>
+      </div>
+
+      <div class="sourcing-grid">
+        <form class="sourcing-form" id="sourcingForm">
+          <label>
+            <span>WHAT ARE YOU SOURCING?</span>
+            <textarea id="request" required placeholder="Example: I need premium full-grain cow leather for men's sneakers, 1.4mm, black, 5,000 pairs."></textarea>
+          </label>
+
+          <div class="field-grid">
+            <label><span>PRODUCT / MATERIAL</span><input id="product" placeholder="e.g. Upper leather"></label>
+            <label><span>QUANTITY</span><input id="quantity" placeholder="e.g. 5,000 pairs"></label>
+            <label><span>TARGET PRICE</span><input id="price" placeholder="e.g. $4 / sqft"></label>
+            <label><span>DESTINATION</span><input id="destination" placeholder="e.g. USA"></label>
+          </div>
+
+          <div class="form-actions">
+            <button class="button button-red" type="submit">Analyze & Find Matches <span>→</span></button>
+            <span class="form-note">No supplier data is invented in this demo.</span>
+          </div>
+        </form>
+
+        <aside class="intelligence-card">
+          <div class="card-top">
+            <span class="eyebrow">CASEVO AI</span>
+            <span class="status">MVP DEMO</span>
+          </div>
+          <h3>From vague request to structured sourcing brief.</h3>
+          <div class="steps-mini">
+            <div><b>01</b><span>Understand requirements</span></div>
+            <div><b>02</b><span>Normalize specifications</span></div>
+            <div><b>03</b><span>Match supplier capabilities</span></div>
+            <div><b>04</b><span>Score & verify</span></div>
+          </div>
+        </aside>
+      </div>
+
+      <div class="results" id="results" hidden>
+        <div class="results-head">
+          <div>
+            <div class="eyebrow">AI SOURCING RESULT</div>
+            <h3 id="resultTitle">Supplier matches</h3>
+          </div>
+          <span class="analysis-badge">STRUCTURED BRIEF READY</span>
+        </div>
+
+        <div class="brief" id="brief"></div>
+        <div class="supplier-grid" id="supplierGrid"></div>
+
+        <div class="human-note">
+          <strong>Next step: Human Verification.</strong>
+          These demo matches are illustrative. Before a supplier is presented as verified, CASEVO will confirm company identity, capability, samples, MOQ, export experience and current contact details.
+        </div>
+      </div>
+    </section>
+
+    <section class="how section" id="how">
+      <div class="section-head">
+        <div><div class="eyebrow">02 / HOW IT WORKS</div><h2>AI does the research.<br><em>You make the decision.</em></h2></div>
+      </div>
+      <div class="process-grid">
+        <article><span>01</span><h3>Describe</h3><p>Send a product requirement, material specification or even a rough sourcing brief.</p></article>
+        <article><span>02</span><h3>Match</h3><p>CASEVO structures the request and identifies suppliers based on product and capability fit.</p></article>
+        <article><span>03</span><h3>Score</h3><p>Suppliers are evaluated across product match, MOQ, capability, export experience and risk.</p></article>
+        <article><span>04</span><h3>Verify</h3><p>Local human verification is the final layer before a supplier is recommended for a project.</p></article>
+      </div>
+    </section>
+
+    <section class="score section" id="score">
+      <div class="score-copy">
+        <div class="eyebrow">03 / CASEVO SCORE™</div>
+        <h2>Beyond price.<br><em>Measure the fit.</em></h2>
+        <p>A supplier is more than a quotation. CASEVO Score is designed to make sourcing decisions easier by combining product fit, capability, MOQ, export experience, lead time and risk into one decision framework.</p>
+        <a class="text-link" href="#report">See report structure →</a>
+      </div>
+      <div class="score-ring">
+        <div class="ring-inner"><strong>86</strong><span>/ 100</span><small>CASEVO SCORE™</small></div>
+      </div>
+      <div class="score-list">
+        <div><span>Product Match</span><b>25%</b></div>
+        <div><span>Factory Capability</span><b>20%</b></div>
+        <div><span>MOQ & Commercial Fit</span><b>10%</b></div>
+        <div><span>Export Experience</span><b>10%</b></div>
+        <div><span>Quality / Lead Time / Risk</span><b>25%</b></div>
+      </div>
+    </section>
+
+    <section class="report section" id="report">
+      <div class="report-card">
+        <div>
+          <div class="eyebrow">04 / SUPPLIER INTELLIGENCE</div>
+          <h2>A professional sourcing report, not a search result.</h2>
+          <p>Our paid report will turn supplier research into an actionable shortlist for your purchasing team.</p>
+        </div>
+        <div class="report-items">
+          <span>Company Overview</span>
+          <span>Product Capability</span>
+          <span>MOQ & Pricing Context</span>
+          <span>Export Markets</span>
+          <span>Contact Intelligence</span>
+          <span>Risk Assessment</span>
+          <span>CASEVO Score™</span>
+          <span>Human Verification</span>
+        </div>
+        <div class="report-price">
+          <small>STARTING PRODUCT</small>
+          <strong>$149</strong>
+          <span>Supplier Intelligence Report</span>
+          <a class="button button-light" href="#contact">Request a Report →</a>
+        </div>
+      </div>
+    </section>
+
+    <section class="contact section" id="contact">
+      <div>
+        <div class="eyebrow">START A SOURCING PROJECT</div>
+        <h2>Have a real requirement?<br><em>Let's work on it.</em></h2>
+        <p>Tell us what you need and CASEVO will prepare the sourcing brief for the next step.</p>
+      </div>
+      <form class="contact-form" onsubmit="submitContact(event)">
+        <input id="contactName" required placeholder="Your name">
+        <input id="contactEmail" type="email" required placeholder="Business email">
+        <input id="contactCompany" placeholder="Company">
+        <textarea id="contactNeed" required placeholder="What are you looking to source?"></textarea>
+        <button class="button button-red" type="submit">Request Sourcing Support →</button>
+        <p id="contactMessage" class="success-message" hidden>Thank you. Your request is ready for the next step.</p>
+      </form>
+    </section>
+  </main>
+
+  <footer>
+    <div class="brand"><span class="brand-mark">策</span><span>CASEVO <small>AI</small></span></div>
+    <div class="footer-links"><a href="#sourcing">AI Sourcing</a><a href="#how">How It Works</a><a href="#score">CASEVO Score</a><a href="#report">Reports</a></div>
+    <small>© 2026 CASEVO AI. China Sourcing Intelligence.</small>
+  </footer>
+
+  <script src="script.js"></script>
+</body>
+</html>
