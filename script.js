@@ -1,33 +1,55 @@
-/* =========================================================
-   CASEVO AI
-   REAL SUPPLIER DISCOVERY ENGINE
-   Frontend Script v3.0
-   ========================================================= */
-
-(() => {
+(function () {
   "use strict";
 
-  /* =========================================================
-     CONFIG
-     ========================================================= */
+  /*
+   * ============================================================
+   * CASEVO AI SOURCING — FRONTEND v3.1
+   * ============================================================
+   *
+   * Frontend:
+   * 1. Collect sourcing requirements
+   * 2. Reliably detect all form fields
+   * 3. Automatically recover destination from the main request
+   * 4. POST to /api/sourcing
+   * 5. Render real supplier search results
+   *
+   * Backend:
+   * Cloudflare Worker
+   * POST /api/sourcing
+   *
+   * ============================================================
+   */
 
   const API_ENDPOINT = "/api/sourcing";
 
-  const CASEVO = {
-    name: "CASEVO AI",
-    version: "3.0.0"
-  };
+  console.log("========================================");
+  console.log("CASEVO AI Sourcing frontend v3.1 loaded");
+  console.log("API:", API_ENDPOINT);
+  console.log("========================================");
 
-  /* =========================================================
-     HELPERS
-     ========================================================= */
 
-  function normalizeText(value) {
-    return String(value || "").trim();
+  // ============================================================
+  // BASIC HELPERS
+  // ============================================================
+
+  function qs(selector, root) {
+    return (root || document).querySelector(selector);
   }
 
-  function escapeHTML(value) {
+  function qsa(selector, root) {
+    return Array.from(
+      (root || document).querySelectorAll(selector)
+    );
+  }
+
+  function normalize(value) {
     return String(value || "")
+      .replace(/\s+/g, " ")
+      .trim();
+  }
+
+  function escapeHtml(value) {
+    return String(value == null ? "" : value)
       .replace(/&/g, "&amp;")
       .replace(/</g, "&lt;")
       .replace(/>/g, "&gt;")
@@ -35,1321 +57,2103 @@
       .replace(/'/g, "&#039;");
   }
 
-  function generateRequestId() {
-    const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
-    let result = "";
-
-    for (let i = 0; i < 8; i++) {
-      result += chars[Math.floor(Math.random() * chars.length)];
-    }
-
-    return `CASEVO-${Date.now().toString(36).toUpperCase()}-${result}`;
+  function setText(el, text) {
+    if (!el) return;
+    el.textContent = text;
   }
 
-  function getElementByText(text) {
-    const elements = Array.from(
-      document.querySelectorAll("button, a, h1, h2, h3, p, label, span")
-    );
-
-    return elements.find((el) => {
-      return normalizeText(el.textContent).toLowerCase() === text.toLowerCase();
-    });
+  function setHtml(el, html) {
+    if (!el) return;
+    el.innerHTML = html;
   }
 
-  function findInputByLabel(labelText) {
-    const labels = Array.from(document.querySelectorAll("label"));
 
-    for (const label of labels) {
-      const text = normalizeText(label.textContent).toLowerCase();
+  // ============================================================
+  // FIND SOURCING FORM
+  // ============================================================
 
-      if (text.includes(labelText.toLowerCase())) {
-        const forId = label.getAttribute("for");
+  function findSourcingForm() {
+    const forms = qsa("form");
 
-        if (forId) {
-          const element = document.getElementById(forId);
-
-          if (element) {
-            return element;
-          }
-        }
-
-        const inside = label.querySelector("input, textarea");
-
-        if (inside) {
-          return inside;
-        }
-
-        const parent = label.parentElement;
-
-        if (parent) {
-          const nearby = parent.querySelector("input, textarea");
-
-          if (nearby) {
-            return nearby;
-          }
-        }
-      }
-    }
-
-    return null;
-  }
-
-  function findInputByPlaceholder(text) {
-    const elements = Array.from(
-      document.querySelectorAll("input, textarea")
-    );
-
-    return elements.find((element) => {
-      const placeholder = normalizeText(
-        element.getAttribute("placeholder")
-      ).toLowerCase();
-
-      return placeholder.includes(text.toLowerCase());
-    });
-  }
-
-  function findTextarea() {
-    return (
-      document.querySelector("textarea") ||
-      findInputByLabel("what are you sourcing") ||
-      findInputByPlaceholder("what are you sourcing")
-    );
-  }
-
-  function findProductInput() {
-    return (
-      findInputByLabel("product / material") ||
-      findInputByPlaceholder("upper leather") ||
-      findInputByPlaceholder("product")
-    );
-  }
-
-  function findQuantityInput() {
-    return (
-      findInputByLabel("quantity") ||
-      findInputByPlaceholder("5,000 pairs") ||
-      findInputByPlaceholder("quantity")
-    );
-  }
-
-  function findPriceInput() {
-    return (
-      findInputByLabel("target price") ||
-      findInputByPlaceholder("$4 / sqft") ||
-      findInputByPlaceholder("target price")
-    );
-  }
-
-  function findDestinationInput() {
-    return (
-      findInputByLabel("destination") ||
-      findInputByPlaceholder("USA") ||
-      findInputByPlaceholder("destination")
-    );
-  }
-
-  /* =========================================================
-     FORM ELEMENTS
-     ========================================================= */
-
-  function getFormElements() {
-    return {
-      request: findTextarea(),
-      product: findProductInput(),
-      quantity: findQuantityInput(),
-      targetPrice: findPriceInput(),
-      destination: findDestinationInput()
-    };
-  }
-
-  /* =========================================================
-     FIND ANALYZE BUTTON
-     ========================================================= */
-
-  function findAnalyzeButton() {
-    const buttons = Array.from(
-      document.querySelectorAll("button, input[type='submit']")
-    );
-
-    const keywords = [
-      "analyze",
-      "find matches",
-      "start ai sourcing",
-      "start sourcing"
-    ];
-
-    for (const button of buttons) {
-      const text = normalizeText(
-        button.textContent || button.value
-      ).toLowerCase();
-
-      if (
-        keywords.some((keyword) => text.includes(keyword))
-      ) {
-        return button;
-      }
-    }
-
-    return null;
-  }
-
-  /* =========================================================
-     FIND FORM
-     ========================================================= */
-
-  function findForm() {
-    const button = findAnalyzeButton();
-
-    if (!button) {
+    if (!forms.length) {
+      console.warn("CASEVO: No form elements found.");
       return null;
     }
 
-    return (
-      button.closest("form") ||
-      button.parentElement?.parentElement ||
-      button.parentElement
-    );
-  }
+    /*
+     * Prefer the form containing:
+     * sourcing / destination / quantity / product
+     */
 
-  /* =========================================================
-     LOADING STATE
-     ========================================================= */
-
-  function setLoading(button, loading) {
-    if (!button) return;
-
-    if (loading) {
-      button.dataset.originalText =
-        button.innerHTML;
-
-      button.disabled = true;
-
-      button.innerHTML = `
-        <span style="
-          display:inline-flex;
-          align-items:center;
-          gap:8px;
-        ">
-          <span style="
-            width:12px;
-            height:12px;
-            border:2px solid currentColor;
-            border-right-color:transparent;
-            border-radius:50%;
-            display:inline-block;
-            animation:casevoSpin .8s linear infinite;
-          "></span>
-          Finding suppliers...
-        </span>
-      `;
-    } else {
-      button.disabled = false;
-
-      if (button.dataset.originalText) {
-        button.innerHTML =
-          button.dataset.originalText;
-      }
-    }
-  }
-
-  /* =========================================================
-     CSS FOR LOADING
-     ========================================================= */
-
-  function injectRuntimeCSS() {
-    if (document.getElementById("casevo-runtime-css")) {
-      return;
-    }
-
-    const style = document.createElement("style");
-
-    style.id = "casevo-runtime-css";
-
-    style.textContent = `
-      @keyframes casevoSpin {
-        from {
-          transform: rotate(0deg);
-        }
-
-        to {
-          transform: rotate(360deg);
-        }
-      }
-
-      .casevo-supplier-card {
-        border: 1px solid #d8d0c4;
-        padding: 22px;
-        margin-top: 18px;
-        background: #fbf8f1;
-      }
-
-      .casevo-supplier-card:hover {
-        border-color: #b52e25;
-      }
-
-      .casevo-supplier-name {
-        font-family: Georgia, serif;
-        font-size: 24px;
-        line-height: 1.15;
-        margin-bottom: 10px;
-      }
-
-      .casevo-supplier-meta {
-        font-size: 13px;
-        line-height: 1.6;
-        color: #555;
-      }
-
-      .casevo-supplier-link {
-        display: inline-block;
-        margin-top: 12px;
-        color: #b52e25;
-        text-decoration: none;
-        font-weight: 600;
-      }
-
-      .casevo-supplier-link:hover {
-        text-decoration: underline;
-      }
-
-      .casevo-match-score {
-        display: inline-block;
-        margin-top: 12px;
-        padding: 5px 9px;
-        background: #1e1c19;
-        color: white;
-        font-size: 11px;
-        letter-spacing: .08em;
-        text-transform: uppercase;
-      }
-
-      .casevo-status {
-        border: 1px solid #d8d0c4;
-        padding: 18px;
-        margin-top: 18px;
-        background: #fbf8f1;
-      }
-
-      .casevo-status.error {
-        border-color: #c84a40;
-      }
-
-      .casevo-status.success {
-        border-color: #b9b09f;
-      }
-
-      .casevo-status-title {
-        font-weight: 700;
-        margin-bottom: 7px;
-      }
-
-      .casevo-analysis-box {
-        margin-top: 24px;
-      }
-
-      .casevo-eyebrow {
-        font-size: 10px;
-        letter-spacing: .18em;
-        text-transform: uppercase;
-        color: #a52d25;
-        margin-bottom: 10px;
-      }
-
-      .casevo-empty {
-        border: 1px solid #d8d0c4;
-        padding: 20px;
-        margin-top: 18px;
-        color: #555;
-        line-height: 1.6;
-      }
-
-      .casevo-supplier-description {
-        margin-top: 10px;
-        color: #444;
-        line-height: 1.55;
-      }
-
-      .casevo-request-id {
-        margin-top: 18px;
-        font-size: 11px;
-        color: #777;
-      }
-
-      .casevo-source {
-        margin-top: 12px;
-        font-size: 11px;
-        color: #777;
-      }
-    `;
-
-    document.head.appendChild(style);
-  }
-
-  /* =========================================================
-     RESULT CONTAINER
-     ========================================================= */
-
-  function findExistingResultsArea() {
-    const headings = Array.from(
-      document.querySelectorAll("h1, h2, h3, h4, p, div")
-    );
-
-    const target = headings.find((element) => {
-      const text = normalizeText(
-        element.textContent
+    const scoring = forms.map(function (form) {
+      const text = (
+        form.innerText ||
+        form.textContent ||
+        ""
       ).toLowerCase();
 
-      return (
-        text.includes("real supplier discovery completed") ||
-        text.includes("potential suppliers found") ||
-        text.includes("sourcing analysis completed")
-      );
-    });
+      let score = 0;
 
-    if (target) {
-      return (
-        target.closest("section") ||
-        target.closest("article") ||
-        target.closest(".card") ||
-        target.parentElement?.parentElement ||
-        target.parentElement
-      );
-    }
+      if (text.includes("sourcing")) {
+        score += 10;
+      }
 
-    return null;
-  }
+      if (text.includes("what are you sourcing")) {
+        score += 10;
+      }
 
-  function getResultsContainer() {
-    let container = document.getElementById(
-      "casevo-results-container"
-    );
+      if (text.includes("product")) {
+        score += 5;
+      }
 
-    if (container) {
-      return container;
-    }
+      if (text.includes("material")) {
+        score += 5;
+      }
 
-    const existing = findExistingResultsArea();
+      if (text.includes("quantity")) {
+        score += 5;
+      }
 
-    if (existing) {
-      container = existing;
-      container.id = "casevo-results-container";
-      return container;
-    }
+      if (text.includes("destination")) {
+        score += 10;
+      }
 
-    const form = findForm();
+      if (text.includes("target price")) {
+        score += 5;
+      }
 
-    container = document.createElement("div");
-
-    container.id = "casevo-results-container";
-
-    container.style.marginTop = "30px";
-
-    if (form && form.parentElement) {
-      form.parentElement.appendChild(container);
-    } else {
-      document.body.appendChild(container);
-    }
-
-    return container;
-  }
-
-  /* =========================================================
-     NORMALIZE SUPPLIER DATA
-     ========================================================= */
-
-  function normalizeSupplier(item) {
-    if (!item) {
-      return null;
-    }
-
-    if (typeof item === "string") {
       return {
-        name: item,
-        website: "",
-        location: "",
-        description: "",
-        score: null
+        form: form,
+        score: score
       };
-    }
+    });
 
-    return {
-      name:
-        item.name ||
-        item.company ||
-        item.companyName ||
-        item.title ||
-        item.supplier ||
-        "Supplier",
+    scoring.sort(function (a, b) {
+      return b.score - a.score;
+    });
 
-      website:
-        item.website ||
-        item.url ||
-        item.link ||
-        item.domain ||
-        "",
+    console.log(
+      "CASEVO: Form detection:",
+      scoring
+    );
 
-      location:
-        item.location ||
-        item.city ||
-        item.country ||
-        item.address ||
-        "",
-
-      description:
-        item.description ||
-        item.summary ||
-        item.reason ||
-        item.snippet ||
-        item.about ||
-        "",
-
-      score:
-        item.score ??
-        item.matchScore ??
-        item.match ??
-        item.relevance ??
-        null
-    };
+    return scoring[0].form;
   }
 
-  /* =========================================================
-     EXTRACT SUPPLIERS FROM API RESPONSE
-     ========================================================= */
 
-  function extractSuppliers(data) {
-    if (!data) {
-      return [];
-    }
+  // ============================================================
+  // ELEMENT TEXT / LABEL DETECTION
+  // ============================================================
 
-    const possibleArrays = [
-      data.suppliers,
-      data.matches,
-      data.results,
-      data.supplierMatches,
-      data.supplier_matches,
-      data.data?.suppliers,
-      data.data?.matches,
-      data.data?.results
-    ];
+  function getElementContext(el) {
+    if (!el) return "";
 
-    for (const list of possibleArrays) {
-      if (Array.isArray(list)) {
-        return list
-          .map(normalizeSupplier)
-          .filter(Boolean);
+    let context = "";
+
+    context += " ";
+    context += el.name || "";
+    context += " ";
+    context += el.id || "";
+    context += " ";
+    context += el.placeholder || "";
+    context += " ";
+    context += el.getAttribute("aria-label") || "";
+    context += " ";
+    context += el.getAttribute("data-field") || "";
+    context += " ";
+    context += el.getAttribute("data-name") || "";
+    context += " ";
+
+    /*
+     * Include associated label.
+     */
+
+    if (el.id) {
+      const label = qs(
+        'label[for="' +
+          CSS.escape(el.id) +
+          '"]'
+      );
+
+      if (label) {
+        context += " ";
+        context += label.innerText || label.textContent || "";
       }
     }
 
-    return [];
-  }
+    /*
+     * Include parent text.
+     */
 
-  /* =========================================================
-     FORMAT SCORE
-     ========================================================= */
+    if (el.parentElement) {
+      context += " ";
+      context +=
+        el.parentElement.innerText ||
+        el.parentElement.textContent ||
+        "";
+    }
 
-  function formatScore(score) {
+    /*
+     * Include grandparent text.
+     */
+
     if (
-      score === null ||
-      score === undefined ||
-      score === ""
+      el.parentElement &&
+      el.parentElement.parentElement
     ) {
-      return "";
+      context += " ";
+      context +=
+        el.parentElement.parentElement.innerText ||
+        el.parentElement.parentElement.textContent ||
+        "";
     }
 
-    let number = Number(score);
-
-    if (!Number.isFinite(number)) {
-      return "";
-    }
-
-    if (number <= 1) {
-      number = number * 100;
-    }
-
-    number = Math.round(number);
-
-    return `${Math.max(0, Math.min(100, number))}% match`;
+    return normalize(context).toLowerCase();
   }
 
-  /* =========================================================
-     RENDER REQUEST SUMMARY
-     ========================================================= */
 
-  function renderRequestSummary(values, requestId) {
-    return `
-      <div class="casevo-analysis-box">
+  // ============================================================
+  // FIND TEXTAREA
+  // ============================================================
 
-        <div class="casevo-eyebrow">
-          CASEVO AI / SOURCING ANALYSIS
-        </div>
+  function findRequirementTextarea(form) {
+    if (!form) return null;
 
-        <h2>
-          Real supplier discovery completed.
-        </h2>
-
-        <div style="margin-top:18px; line-height:1.8;">
-          <strong>Product / Material:</strong>
-          ${escapeHTML(values.product || "Not specified")}
-        </div>
-
-        <div style="line-height:1.8;">
-          <strong>Quantity:</strong>
-          ${escapeHTML(values.quantity || "Not specified")}
-        </div>
-
-        <div style="line-height:1.8;">
-          <strong>Target Price:</strong>
-          ${escapeHTML(values.targetPrice || "Not specified")}
-        </div>
-
-        <div style="line-height:1.8;">
-          <strong>Destination:</strong>
-          ${escapeHTML(values.destination || "Not specified")}
-        </div>
-
-        <div class="casevo-request-id">
-          Request ID: ${escapeHTML(requestId)}
-        </div>
-
-      </div>
-    `;
-  }
-
-  /* =========================================================
-     RENDER SUPPLIER
-     ========================================================= */
-
-  function renderSupplier(supplier, index) {
-    const name = escapeHTML(
-      supplier.name || `Supplier ${index + 1}`
+    const textareas = qsa(
+      "textarea",
+      form
     );
 
-    const location = escapeHTML(
-      supplier.location || ""
-    );
+    if (!textareas.length) {
+      return null;
+    }
 
-    const description = escapeHTML(
-      supplier.description ||
-      "Public-web evidence indicates potential supplier capability related to this sourcing requirement."
-    );
+    /*
+     * First try explicit attributes.
+     */
 
-    let websiteHTML = "";
-
-    if (supplier.website) {
-      let url = supplier.website;
+    for (const textarea of textareas) {
+      const context =
+        getElementContext(textarea);
 
       if (
-        !url.startsWith("http://") &&
-        !url.startsWith("https://")
+        context.includes("requirement") ||
+        context.includes("requirements") ||
+        context.includes("sourcing") ||
+        context.includes("what are you sourcing") ||
+        context.includes("brief") ||
+        context.includes("request")
       ) {
-        url = `https://${url}`;
+        return textarea;
       }
-
-      websiteHTML = `
-        <a
-          class="casevo-supplier-link"
-          href="${escapeHTML(url)}"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          Visit supplier website →
-        </a>
-      `;
     }
 
-    const score = formatScore(
-      supplier.score
+    /*
+     * The large textarea is normally the sourcing requirement.
+     */
+
+    if (textareas.length === 1) {
+      return textareas[0];
+    }
+
+    /*
+     * Prefer the largest textarea.
+     */
+
+    return textareas.sort(function (a, b) {
+      const aSize =
+        (a.rows || 0) *
+        (a.cols || 0);
+
+      const bSize =
+        (b.rows || 0) *
+        (b.cols || 0);
+
+      return bSize - aSize;
+    })[0];
+  }
+
+
+  // ============================================================
+  // FIND INPUT BY SEMANTIC MEANING
+  // ============================================================
+
+  function findInputByMeaning(
+    form,
+    keywords,
+    fallbackIndex
+  ) {
+    if (!form) return null;
+
+    const inputs = qsa(
+      'input:not([type="hidden"]), select',
+      form
     );
 
-    const scoreHTML = score
-      ? `<div class="casevo-match-score">${score}</div>`
-      : "";
+    if (!inputs.length) {
+      return null;
+    }
 
-    return `
-      <div class="casevo-supplier-card">
+    /*
+     * Strong semantic match.
+     */
 
-        <div class="casevo-eyebrow">
-          Supplier ${index + 1}
-        </div>
+    for (const input of inputs) {
+      const context =
+        getElementContext(input);
 
-        <div class="casevo-supplier-name">
-          ${name}
-        </div>
-
-        ${
-          location
-            ? `
-              <div class="casevo-supplier-meta">
-                <strong>Location:</strong>
-                ${location}
-              </div>
-            `
-            : ""
+      for (const keyword of keywords) {
+        if (context.includes(keyword)) {
+          return input;
         }
+      }
+    }
 
-        <div class="casevo-supplier-description">
-          ${description}
-        </div>
+    /*
+     * Fallback to visible input order.
+     */
 
-        ${scoreHTML}
+    if (
+      typeof fallbackIndex === "number" &&
+      inputs[fallbackIndex]
+    ) {
+      return inputs[fallbackIndex];
+    }
 
-        ${websiteHTML}
-
-      </div>
-    `;
+    return null;
   }
 
-  /* =========================================================
-     RENDER RESULTS
-     ========================================================= */
 
-  function renderResults(
-    values,
-    data,
-    requestId
-  ) {
-    const container =
-      getResultsContainer();
+  // ============================================================
+  // SPECIFIC FIELD FINDERS
+  // ============================================================
 
-    const suppliers =
-      extractSuppliers(data);
+  function findProductInput(form) {
+    return findInputByMeaning(
+      form,
+      [
+        "product / material",
+        "product/material",
+        "product_material",
+        "productmaterial",
+        "material",
+        "product"
+      ],
+      0
+    );
+  }
 
-    let html =
-      renderRequestSummary(
-        values,
-        requestId
-      );
 
-    html += `
-      <div style="margin-top:30px;">
-        <div class="casevo-eyebrow">
-          REAL SUPPLIER MATCHES
-        </div>
+  function findQuantityInput(form) {
+    return findInputByMeaning(
+      form,
+      [
+        "quantity",
+        "qty",
+        "volume",
+        "order quantity",
+        "order_quantity"
+      ],
+      1
+    );
+  }
 
-        <h3 style="
-          font-family:Georgia,serif;
-          font-size:30px;
-          line-height:1.15;
-          margin:0;
-        ">
-          ${
-            suppliers.length
-              ? `${suppliers.length} potential suppliers found.`
-              : "Supplier discovery completed."
-          }
-        </h3>
-      </div>
-    `;
 
-    if (suppliers.length) {
-      suppliers.forEach(
-        (supplier, index) => {
-          html += renderSupplier(
-            supplier,
-            index
+  function findPriceInput(form) {
+    return findInputByMeaning(
+      form,
+      [
+        "target price",
+        "target_price",
+        "targetprice",
+        "price"
+      ],
+      2
+    );
+  }
+
+
+  function findDestinationInput(form) {
+    /*
+     * IMPORTANT:
+     * Destination is the field that previously failed.
+     *
+     * We deliberately search very aggressively here.
+     */
+
+    const inputs = qsa(
+      'input:not([type="hidden"]), select',
+      form
+    );
+
+    /*
+     * 1. Exact semantic search.
+     */
+
+    const exactKeywords = [
+      "destination",
+      "shipping destination",
+      "ship to",
+      "shipping to",
+      "country",
+      "market",
+      "delivery country",
+      "destination country"
+    ];
+
+    for (const input of inputs) {
+      const context =
+        getElementContext(input);
+
+      for (const keyword of exactKeywords) {
+        if (context.includes(keyword)) {
+          console.log(
+            "CASEVO: Destination field detected:",
+            input,
+            "via:",
+            keyword
           );
+
+          return input;
         }
-      );
-    } else {
-      html += `
-        <div class="casevo-empty">
-
-          CASEVO completed the supplier discovery
-          analysis, but no supplier matches were
-          returned from the public web search.
-
-          <br><br>
-
-          Try using a more specific product or
-          material description, such as:
-
-          <br><br>
-
-          <strong>
-            Premium full-grain leather shoe upper,
-            1.4mm, black, men's sneakers
-          </strong>
-
-        </div>
-      `;
+      }
     }
 
-    html += `
-      <div class="casevo-source">
-        Supplier data source:
-        Public web search via Tavily
-      </div>
-    `;
+    /*
+     * 2. Look for placeholder examples such as:
+     * e.g. USA
+     */
 
-    container.innerHTML = html;
+    for (const input of inputs) {
+      const placeholder =
+        normalize(
+          input.placeholder || ""
+        ).toLowerCase();
 
-    container.scrollIntoView({
-      behavior: "smooth",
-      block: "start"
-    });
-  }
+      if (
+        placeholder.includes("usa") ||
+        placeholder.includes("country") ||
+        placeholder.includes("destination")
+      ) {
+        console.log(
+          "CASEVO: Destination detected by placeholder:",
+          input
+        );
 
-  /* =========================================================
-     ERROR RENDER
-     ========================================================= */
-
-  function renderError(
-    values,
-    error,
-    requestId
-  ) {
-    const container =
-      getResultsContainer();
-
-    container.innerHTML = `
-      <div class="casevo-status error">
-
-        <div class="casevo-eyebrow">
-          CASEVO AI / ERROR
-        </div>
-
-        <div class="casevo-status-title">
-          Supplier discovery could not be completed.
-        </div>
-
-        <div style="line-height:1.6;">
-          ${escapeHTML(
-            error ||
-            "The supplier search service returned an unexpected response."
-          )}
-        </div>
-
-        <div class="casevo-request-id">
-          Request ID: ${escapeHTML(requestId)}
-        </div>
-
-      </div>
-    `;
-
-    container.scrollIntoView({
-      behavior: "smooth",
-      block: "start"
-    });
-  }
-
-  /* =========================================================
-     BUILD REQUEST BODY
-     ========================================================= */
-
-  function buildRequestBody(
-    values,
-    requestId
-  ) {
-    return {
-
-      /* Primary fields */
-      request: values.request,
-
-      product: values.product,
-
-      material: values.product,
-
-      quantity: values.quantity,
-
-      targetPrice: values.targetPrice,
-
-      target_price: values.targetPrice,
-
-      destination: values.destination,
-
-      /* Additional aliases for compatibility */
-      query: values.request,
-
-      sourcingRequest: values.request,
-
-      sourcing_request: values.request,
-
-      productMaterial: values.product,
-
-      product_material: values.product,
-
-      /* CASEVO metadata */
-      requestId: requestId,
-
-      request_id: requestId,
-
-      service: CASEVO.name,
-
-      version: CASEVO.version
-    };
-  }
-
-  /* =========================================================
-     API REQUEST
-     ========================================================= */
-
-  async function callSourcingAPI(
-    values,
-    requestId
-  ) {
-    const body =
-      buildRequestBody(
-        values,
-        requestId
-      );
-
-    const response =
-      await fetch(
-        API_ENDPOINT,
-        {
-          method: "POST",
-
-          headers: {
-            "Content-Type":
-              "application/json",
-
-            "Accept":
-              "application/json"
-          },
-
-          body: JSON.stringify(body)
-        }
-      );
-
-    const text =
-      await response.text();
-
-    let data = null;
-
-    try {
-      data = text
-        ? JSON.parse(text)
-        : null;
-    } catch (error) {
-      data = {
-        raw: text
-      };
+        return input;
+      }
     }
 
-    if (!response.ok) {
-      const message =
-        data?.error ||
-        data?.message ||
-        data?.details ||
-        `Supplier search failed (${response.status})`;
+    /*
+     * 3. Use visible input order as final fallback.
+     *
+     * The CASEVO form currently uses:
+     * Product
+     * Quantity
+     * Target Price
+     * Destination
+     */
 
-      throw new Error(message);
+    if (inputs.length >= 4) {
+      console.log(
+        "CASEVO: Destination detected by fallback index."
+      );
+
+      return inputs[3];
     }
+
+    return null;
+  }
+
+
+  // ============================================================
+  // EXTRACT DESTINATION FROM REQUIREMENT
+  // ============================================================
+
+  function extractDestinationFromRequirement(
+    requirement
+  ) {
+    const text = normalize(requirement);
+
+    if (!text) {
+      return "";
+    }
+
+    /*
+     * United States
+     */
 
     if (
-      data &&
-      data.ok === false
+      /\bunited states\b/i.test(text) ||
+      /\bUSA\b/i.test(text) ||
+      /\bU\.S\.A\.\b/i.test(text) ||
+      /\bU\.S\.\b/i.test(text) ||
+      /\bUS\b/i.test(text) ||
+      /\bUnited States of America\b/i.test(text)
     ) {
-      throw new Error(
-        data.error ||
-        data.message ||
-        "Supplier search failed."
-      );
+      return "United States";
     }
 
-    return data;
-  }
+    /*
+     * Canada
+     */
 
-  /* =========================================================
-     VALIDATE FORM
-     ========================================================= */
-
-  function validate(values) {
-    if (!values.request) {
-      return "Please describe what you are sourcing.";
+    if (/\bcanada\b/i.test(text)) {
+      return "Canada";
     }
+
+    /*
+     * United Kingdom
+     */
 
     if (
-      !values.product &&
-      !values.request
+      /\bunited kingdom\b/i.test(text) ||
+      /\bUK\b/i.test(text) ||
+      /\bU\.K\.\b/i.test(text)
     ) {
-      return "Please enter a product or material.";
+      return "United Kingdom";
     }
 
-    if (!values.destination) {
-      return "Please enter a destination.";
+    /*
+     * Australia
+     */
+
+    if (/\baustralia\b/i.test(text)) {
+      return "Australia";
+    }
+
+    /*
+     * Germany
+     */
+
+    if (/\bgermany\b/i.test(text)) {
+      return "Germany";
+    }
+
+    /*
+     * France
+     */
+
+    if (/\bfrance\b/i.test(text)) {
+      return "France";
+    }
+
+    /*
+     * Italy
+     */
+
+    if (/\bitaly\b/i.test(text)) {
+      return "Italy";
+    }
+
+    /*
+     * Spain
+     */
+
+    if (/\bspain\b/i.test(text)) {
+      return "Spain";
+    }
+
+    /*
+     * Netherlands
+     */
+
+    if (
+      /\bnetherlands\b/i.test(text) ||
+      /\bholland\b/i.test(text)
+    ) {
+      return "Netherlands";
+    }
+
+    /*
+     * Japan
+     */
+
+    if (/\bjapan\b/i.test(text)) {
+      return "Japan";
+    }
+
+    /*
+     * South Korea
+     */
+
+    if (
+      /\bsouth korea\b/i.test(text) ||
+      /\bkorea\b/i.test(text)
+    ) {
+      return "South Korea";
+    }
+
+    /*
+     * Singapore
+     */
+
+    if (/\bsingapore\b/i.test(text)) {
+      return "Singapore";
+    }
+
+    /*
+     * United Arab Emirates
+     */
+
+    if (
+      /\bunited arab emirates\b/i.test(text) ||
+      /\bUAE\b/i.test(text)
+    ) {
+      return "United Arab Emirates";
+    }
+
+    /*
+     * Saudi Arabia
+     */
+
+    if (/\bsaudi arabia\b/i.test(text)) {
+      return "Saudi Arabia";
+    }
+
+    /*
+     * India
+     */
+
+    if (/\bindia\b/i.test(text)) {
+      return "India";
+    }
+
+    /*
+     * Mexico
+     */
+
+    if (/\bmexico\b/i.test(text)) {
+      return "Mexico";
+    }
+
+    /*
+     * Brazil
+     */
+
+    if (/\bbrazil\b/i.test(text)) {
+      return "Brazil";
+    }
+
+    /*
+     * China
+     */
+
+    if (/\bchina\b/i.test(text)) {
+      return "China";
     }
 
     return "";
   }
 
-  /* =========================================================
-     MAIN ANALYZE HANDLER
-     ========================================================= */
 
-  async function handleAnalyze(event) {
-    if (event) {
-      event.preventDefault();
+  // ============================================================
+  // COLLECT FORM VALUES
+  // ============================================================
+
+  function collectFormValues(form) {
+    const textarea =
+      findRequirementTextarea(form);
+
+    const productInput =
+      findProductInput(form);
+
+    const quantityInput =
+      findQuantityInput(form);
+
+    const priceInput =
+      findPriceInput(form);
+
+    const destinationInput =
+      findDestinationInput(form);
+
+
+    let requirement = normalize(
+      textarea
+        ? textarea.value
+        : ""
+    );
+
+    let product = normalize(
+      productInput
+        ? productInput.value
+        : ""
+    );
+
+    let quantity = normalize(
+      quantityInput
+        ? quantityInput.value
+        : ""
+    );
+
+    let targetPrice = normalize(
+      priceInput
+        ? priceInput.value
+        : ""
+    );
+
+    let destination = normalize(
+      destinationInput
+        ? destinationInput.value
+        : ""
+    );
+
+
+    /*
+     * ==========================================================
+     * CRITICAL FIX
+     * ==========================================================
+     *
+     * If Destination is empty in the separate field,
+     * automatically extract it from the main requirement.
+     *
+     * Example:
+     *
+     * "Premium leather shoe upper...
+     * shipping to the United States."
+     *
+     * becomes:
+     *
+     * destination = "United States"
+     */
+
+    if (!destination) {
+      destination =
+        extractDestinationFromRequirement(
+          requirement
+        );
+
+      if (destination) {
+        console.log(
+          "CASEVO: Destination recovered from requirement:",
+          destination
+        );
+      }
     }
 
-    const fields =
-      getFormElements();
+
+    /*
+     * Also recover product if the product field
+     * wasn't detected correctly.
+     */
+
+    if (!product) {
+      const lower =
+        requirement.toLowerCase();
+
+      if (
+        lower.includes("leather shoe upper")
+      ) {
+        product =
+          "leather shoe upper";
+      }
+    }
+
+
+    /*
+     * Recover quantity from requirement.
+     */
+
+    if (!quantity) {
+      const quantityMatch =
+        requirement.match(
+          /([\d,]+)\s*(pairs?|pcs?|pieces?|units?|sets?|kg|tons?|sq\s*ft|sqft)/i
+        );
+
+      if (quantityMatch) {
+        quantity =
+          normalize(
+            quantityMatch[0]
+          );
+      }
+    }
+
+
+    /*
+     * Recover target price.
+     */
+
+    if (!targetPrice) {
+      const priceMatch =
+        requirement.match(
+          /(?:\$|USD\s*)\s*\d+(?:\.\d+)?(?:\s*\/\s*[a-z]+)?/i
+        );
+
+      if (priceMatch) {
+        targetPrice =
+          normalize(
+            priceMatch[0]
+          );
+      }
+    }
+
 
     const values = {
-      request:
-        normalizeText(
-          fields.request?.value
-        ),
-
-      product:
-        normalizeText(
-          fields.product?.value
-        ),
-
-      quantity:
-        normalizeText(
-          fields.quantity?.value
-        ),
-
-      targetPrice:
-        normalizeText(
-          fields.targetPrice?.value
-        ),
-
-      destination:
-        normalizeText(
-          fields.destination?.value
-        )
+      requirement: requirement,
+      product: product,
+      quantity: quantity,
+      targetPrice: targetPrice,
+      destination: destination
     };
 
-    const error =
-      validate(values);
+
+    console.log(
+      "========================================"
+    );
+
+    console.log(
+      "CASEVO: FINAL FORM VALUES"
+    );
+
+    console.log(
+      JSON.stringify(
+        values,
+        null,
+        2
+      )
+    );
+
+    console.log(
+      "========================================"
+    );
+
+
+    return values;
+  }
+
+
+  // ============================================================
+  // VALIDATION
+  // ============================================================
+
+  function validate(values) {
+
+    if (!values.requirement) {
+      return {
+        valid: false,
+        message:
+          "Please enter a sourcing requirement."
+      };
+    }
+
+
+    if (
+      values.requirement.length < 8
+    ) {
+      return {
+        valid: false,
+        message:
+          "Please provide a little more detail about your sourcing requirement."
+      };
+    }
+
+
+    /*
+     * Destination is important for supplier matching.
+     *
+     * BUT:
+     * We do not immediately fail here.
+     *
+     * First attempt recovery from requirement.
+     */
+
+    if (!values.destination) {
+      values.destination =
+        extractDestinationFromRequirement(
+          values.requirement
+        );
+    }
+
+
+    /*
+     * If still empty, ask user.
+     */
+
+    if (!values.destination) {
+      return {
+        valid: false,
+        message:
+          "Please enter a destination, such as USA, United States, Canada, or the United Kingdom."
+      };
+    }
+
+
+    return {
+      valid: true,
+      message: ""
+    };
+  }
+
+
+  // ============================================================
+  // FIND ANALYZE BUTTON
+  // ============================================================
+
+  function findAnalyzeButton(form) {
+    if (!form) return null;
+
+    const buttons = qsa(
+      'button, input[type="submit"], input[type="button"]',
+      form
+    );
+
+    if (!buttons.length) {
+      return null;
+    }
+
+
+    for (const button of buttons) {
+
+      const text = normalize(
+        button.innerText ||
+        button.value ||
+        button.textContent ||
+        ""
+      ).toLowerCase();
+
+
+      if (
+        text.includes("analyze") ||
+        text.includes("find matches") ||
+        text.includes("analyse") ||
+        text.includes("match") ||
+        text.includes("start sourcing")
+      ) {
+        return button;
+      }
+    }
+
+
+    return buttons[
+      buttons.length - 1
+    ];
+  }
+
+
+  // ============================================================
+  // STATUS AREA
+  // ============================================================
+
+  function findStatusArea(form) {
+
+    const selectors = [
+      "[data-casevo-status]",
+      "#casevo-status",
+      ".casevo-status",
+      ".sourcing-status",
+      ".form-status"
+    ];
+
+
+    for (const selector of selectors) {
+
+      const el =
+        qs(selector, form);
+
+      if (el) {
+        return el;
+      }
+    }
+
+
+    /*
+     * Create runtime status.
+     */
 
     const button =
-      findAnalyzeButton();
+      findAnalyzeButton(form);
 
-    if (error) {
-      renderError(
-        values,
-        error,
-        generateRequestId()
+
+    if (
+      button &&
+      button.parentElement
+    ) {
+
+      const existing =
+        qs(
+          ".casevo-runtime-status",
+          button.parentElement
+        );
+
+      if (existing) {
+        return existing;
+      }
+
+
+      const status =
+        document.createElement(
+          "div"
+        );
+
+
+      status.className =
+        "casevo-runtime-status";
+
+
+      status.style.marginTop =
+        "14px";
+
+      status.style.padding =
+        "12px 14px";
+
+      status.style.border =
+        "1px solid rgba(0,0,0,.15)";
+
+      status.style.fontSize =
+        "14px";
+
+      status.style.lineHeight =
+        "1.5";
+
+      status.style.display =
+        "none";
+
+
+      button.parentElement.appendChild(
+        status
+      );
+
+
+      return status;
+    }
+
+
+    return null;
+  }
+
+
+  function showStatus(
+    form,
+    message,
+    type
+  ) {
+
+    const status =
+      findStatusArea(form);
+
+
+    if (!status) {
+      console.log(
+        "CASEVO STATUS:",
+        message
       );
 
       return;
     }
 
-    const requestId =
-      generateRequestId();
 
-    /* Save latest request locally */
-    try {
-      localStorage.setItem(
-        "casevo_last_request_id",
-        requestId
+    status.style.display =
+      "block";
+
+
+    if (type === "error") {
+
+      status.style.borderColor =
+        "rgba(180,40,30,.45)";
+
+      status.style.color =
+        "#8f241d";
+
+    } else if (
+      type === "success"
+    ) {
+
+      status.style.borderColor =
+        "rgba(30,100,70,.35)";
+
+      status.style.color =
+        "#245c43";
+
+    } else {
+
+      status.style.borderColor =
+        "rgba(0,0,0,.15)";
+
+      status.style.color =
+        "inherit";
+    }
+
+
+    setText(
+      status,
+      message
+    );
+  }
+
+
+  // ============================================================
+  // RESULTS CONTAINER
+  // ============================================================
+
+  function findResultsContainer(form) {
+
+    let container =
+      qs(
+        "[data-casevo-results]"
+      ) ||
+      qs(
+        "#casevo-results"
+      ) ||
+      qs(
+        ".casevo-results"
       );
 
-      localStorage.setItem(
-        "casevo_last_request",
-        JSON.stringify(values)
+
+    if (container) {
+      return container;
+    }
+
+
+    container =
+      document.createElement(
+        "div"
       );
-    } catch (storageError) {
-      console.warn(
-        "CASEVO localStorage unavailable.",
-        storageError
+
+
+    container.id =
+      "casevo-results";
+
+
+    container.style.marginTop =
+      "24px";
+
+    container.style.padding =
+      "24px";
+
+    container.style.border =
+      "1px solid rgba(0,0,0,.14)";
+
+    container.style.background =
+      "rgba(255,255,255,.18)";
+
+
+    /*
+     * Put result after form.
+     */
+
+    if (
+      form &&
+      form.parentElement
+    ) {
+
+      form.parentElement.appendChild(
+        container
       );
     }
 
-    setLoading(
-      button,
-      true
+
+    return container;
+  }
+
+
+  // ============================================================
+  // RENDER RESULTS
+  // ============================================================
+
+  function renderResult(
+    form,
+    data
+  ) {
+
+    console.log(
+      "CASEVO: Rendering Worker result:",
+      data
     );
 
+
     const container =
-      getResultsContainer();
+      findResultsContainer(form);
 
-    container.innerHTML = `
-      <div class="casevo-status">
 
-        <div class="casevo-eyebrow">
-          CASEVO AI / SOURCING ENGINE
-        </div>
+    if (!container) {
+      return;
+    }
 
-        <div class="casevo-status-title">
-          Searching the public web for real suppliers...
-        </div>
 
-        <div style="
-          margin-top:8px;
-          color:#666;
-          line-height:1.6;
-        ">
-          CASEVO is analyzing supplier evidence,
-          manufacturing capability and relevance.
-        </div>
+    const analysis =
+      data.analysis ||
+      data.brief ||
+      {};
 
-        <div class="casevo-request-id">
-          Request ID: ${escapeHTML(requestId)}
-        </div>
 
-      </div>
-    `;
+    const matches =
+      Array.isArray(
+        data.matches
+      )
+        ? data.matches
+        : [];
+
+
+    let html = "";
+
+
+    /*
+     * Header
+     */
+
+    html +=
+      '<div style="' +
+      'font-size:12px;' +
+      'letter-spacing:.16em;' +
+      'text-transform:uppercase;' +
+      'margin-bottom:10px;' +
+      '">' +
+      "CASEVO AI" +
+      "</div>";
+
+
+    html +=
+      '<h3 style="' +
+      'margin:0 0 18px;' +
+      'font-size:28px;' +
+      '">' +
+      "Sourcing analysis completed." +
+      "</h3>";
+
+
+    /*
+     * Product
+     */
+
+    if (
+      analysis.product
+    ) {
+
+      html +=
+        "<p>" +
+        "<strong>Product / Material:</strong> " +
+        escapeHtml(
+          analysis.product
+        ) +
+        "</p>";
+    }
+
+
+    /*
+     * Quantity
+     */
+
+    if (
+      analysis.quantity
+    ) {
+
+      html +=
+        "<p>" +
+        "<strong>Quantity:</strong> " +
+        escapeHtml(
+          analysis.quantity
+        ) +
+        "</p>";
+    }
+
+
+    /*
+     * Target price
+     */
+
+    if (
+      analysis.targetPrice
+    ) {
+
+      html +=
+        "<p>" +
+        "<strong>Target Price:</strong> " +
+        escapeHtml(
+          analysis.targetPrice
+        ) +
+        "</p>";
+    }
+
+
+    /*
+     * Destination
+     */
+
+    if (
+      analysis.destination
+    ) {
+
+      html +=
+        "<p>" +
+        "<strong>Destination:</strong> " +
+        escapeHtml(
+          analysis.destination
+        ) +
+        "</p>";
+    }
+
+
+    /*
+     * Supplier matches
+     */
+
+    if (
+      matches.length
+    ) {
+
+      html +=
+        '<div style="' +
+        'margin-top:24px;' +
+        '">';
+
+
+      html +=
+        '<div style="' +
+        'font-size:12px;' +
+        'letter-spacing:.12em;' +
+        'text-transform:uppercase;' +
+        'margin-bottom:12px;' +
+        '">' +
+        "Potential Supplier Matches" +
+        "</div>";
+
+
+      matches.forEach(
+        function (
+          match,
+          index
+        ) {
+
+          html +=
+            '<div style="' +
+            'border-top:1px solid rgba(0,0,0,.15);' +
+            'padding:18px 0;' +
+            '">';
+
+
+          html +=
+            '<div style="' +
+            'font-size:20px;' +
+            'font-weight:600;' +
+            'margin-bottom:8px;' +
+            '">' +
+            escapeHtml(
+              match.name ||
+              "Supplier Match " +
+              (index + 1)
+            ) +
+            "</div>";
+
+
+          if (
+            match.location
+          ) {
+
+            html +=
+              "<div>" +
+              "<strong>Location:</strong> " +
+              escapeHtml(
+                match.location
+              ) +
+              "</div>";
+          }
+
+
+          if (
+            match.capability
+          ) {
+
+            html +=
+              "<div style=\"margin-top:6px;\">" +
+              "<strong>Capability:</strong> " +
+              escapeHtml(
+                match.capability
+              ) +
+              "</div>";
+          }
+
+
+          if (
+            typeof match.matchScore !==
+            "undefined"
+          ) {
+
+            html +=
+              "<div style=\"margin-top:6px;\">" +
+              "<strong>Match score:</strong> " +
+              escapeHtml(
+                match.matchScore
+              ) +
+              "/99" +
+              "</div>";
+          }
+
+
+          if (
+            typeof match.score !==
+            "undefined" &&
+            typeof match.matchScore ===
+            "undefined"
+          ) {
+
+            html +=
+              "<div style=\"margin-top:6px;\">" +
+              "<strong>Match score:</strong> " +
+              escapeHtml(
+                match.score
+              ) +
+              "</div>";
+          }
+
+
+          if (
+            match.website
+          ) {
+
+            html +=
+              '<div style="margin-top:10px;">' +
+              '<a href="' +
+              escapeHtml(
+                match.website
+              ) +
+              '" target="_blank" rel="noopener noreferrer">' +
+              "Visit supplier website →" +
+              "</a>" +
+              "</div>";
+          }
+
+
+          if (
+            match.evidence
+          ) {
+
+            html +=
+              '<div style="' +
+              'margin-top:12px;' +
+              'padding:12px;' +
+              'border:1px solid rgba(0,0,0,.10);' +
+              'font-size:13px;' +
+              'line-height:1.6;' +
+              '">' +
+              "<strong>Public-web evidence:</strong><br>" +
+              escapeHtml(
+                match.evidence
+              ) +
+              "</div>";
+          }
+
+
+          if (
+            match.verificationStatus
+          ) {
+
+            html +=
+              '<div style="' +
+              'margin-top:10px;' +
+              'font-size:12px;' +
+              'opacity:.7;' +
+              '">' +
+              escapeHtml(
+                match.verificationStatus
+              ) +
+              "</div>";
+          }
+
+
+          html +=
+            "</div>";
+        }
+      );
+
+
+      html +=
+        "</div>";
+
+    } else {
+
+      /*
+       * No supplier matches.
+       */
+
+      html +=
+        '<div style="' +
+        'margin-top:20px;' +
+        'padding:16px;' +
+        'border:1px solid rgba(0,0,0,.12);' +
+        'line-height:1.6;' +
+        '">' +
+        "The sourcing requirement was successfully received by CASEVO." +
+        "</div>";
+    }
+
+
+    /*
+     * Metadata
+     */
+
+    if (
+      data.meta
+    ) {
+
+      html +=
+        '<div style="' +
+        'margin-top:18px;' +
+        'font-size:12px;' +
+        'opacity:.65;' +
+        'line-height:1.6;' +
+        '">';
+
+
+      if (
+        data.meta.supplierData
+      ) {
+
+        html +=
+          "Supplier data: " +
+          escapeHtml(
+            data.meta.supplierData
+          ) +
+          "<br>";
+      }
+
+
+      if (
+        data.meta.verified ===
+        false
+      ) {
+
+        html +=
+          "Verification: Public-web discovery; independent verification required.<br>";
+      }
+
+
+      html +=
+        "</div>";
+    }
+
+
+    /*
+     * Request ID
+     */
+
+    if (
+      data.requestId
+    ) {
+
+      html +=
+        '<div style="' +
+        'margin-top:16px;' +
+        'font-size:12px;' +
+        'opacity:.65;' +
+        '">' +
+        "Request ID: " +
+        escapeHtml(
+          data.requestId
+        ) +
+        "</div>";
+    }
+
+
+    setHtml(
+      container,
+      html
+    );
+
+
+    /*
+     * Scroll to result.
+     */
 
     try {
-      const data =
-        await callSourcingAPI(
-          values,
-          requestId
+
+      container.scrollIntoView({
+        behavior: "smooth",
+        block: "start"
+      });
+
+    } catch (error) {
+      console.log(
+        "CASEVO: scrollIntoView unavailable."
+      );
+    }
+  }
+
+
+  // ============================================================
+  // SEND REQUEST TO CLOUDFLARE WORKER
+  // ============================================================
+
+  async function sendToWorker(
+    values
+  ) {
+
+    console.log(
+      "CASEVO: Sending request:",
+      values
+    );
+
+
+    const payload = {
+      requirement:
+        values.requirement,
+
+      product:
+        values.product,
+
+      quantity:
+        values.quantity,
+
+      targetPrice:
+        values.targetPrice,
+
+      destination:
+        values.destination
+    };
+
+
+    console.log(
+      "CASEVO: API payload:",
+      JSON.stringify(
+        payload,
+        null,
+        2
+      )
+    );
+
+
+    let response;
+
+
+    try {
+
+      response =
+        await fetch(
+          API_ENDPOINT,
+          {
+            method: "POST",
+
+            headers: {
+              "Content-Type":
+                "application/json",
+
+              "Accept":
+                "application/json"
+            },
+
+            body:
+              JSON.stringify(
+                payload
+              )
+          }
         );
 
-      console.log(
-        "CASEVO sourcing response:",
+    } catch (networkError) {
+
+      console.error(
+        "CASEVO: Network error:",
+        networkError
+      );
+
+      throw new Error(
+        "Unable to connect to the CASEVO sourcing engine."
+      );
+    }
+
+
+    console.log(
+      "CASEVO: Worker HTTP status:",
+      response.status
+    );
+
+
+    const contentType =
+      response.headers.get(
+        "content-type"
+      ) || "";
+
+
+    let data;
+
+
+    /*
+     * JSON response.
+     */
+
+    if (
+      contentType.includes(
+        "application/json"
+      )
+    ) {
+
+      try {
+
+        data =
+          await response.json();
+
+      } catch (jsonError) {
+
+        console.error(
+          "CASEVO: JSON parse error:",
+          jsonError
+        );
+
+        throw new Error(
+          "The CASEVO sourcing engine returned invalid JSON."
+        );
+      }
+
+    } else {
+
+      const text =
+        await response.text();
+
+
+      console.error(
+        "CASEVO: Worker returned non-JSON:",
+        text
+      );
+
+
+      throw new Error(
+        "The CASEVO sourcing engine returned an unexpected response."
+      );
+    }
+
+
+    console.log(
+      "CASEVO: API response:",
+      data
+    );
+
+
+    /*
+     * Worker error.
+     */
+
+    if (
+      !response.ok
+    ) {
+
+      const errorMessage =
+        data.error ||
+        data.message ||
+        data.details ||
+        (
+          "Worker request failed with HTTP " +
+          response.status
+        );
+
+
+      throw new Error(
+        errorMessage
+      );
+    }
+
+
+    /*
+     * Successful response.
+     */
+
+    return data;
+  }
+
+
+  // ============================================================
+  // SUBMIT HANDLER
+  // ============================================================
+
+  async function handleSubmit(
+    event
+  ) {
+
+    event.preventDefault();
+
+
+    const form =
+      event.currentTarget;
+
+
+    const button =
+      findAnalyzeButton(
+        form
+      );
+
+
+    const originalText =
+      button
+        ? (
+            button.innerText ||
+            button.value ||
+            "Analyze & Find Matches"
+          )
+        : "";
+
+
+    /*
+     * Collect everything.
+     */
+
+    const values =
+      collectFormValues(
+        form
+      );
+
+
+    /*
+     * Validate.
+     */
+
+    const validation =
+      validate(
+        values
+      );
+
+
+    if (
+      !validation.valid
+    ) {
+
+      showStatus(
+        form,
+        validation.message,
+        "error"
+      );
+
+
+      console.warn(
+        "CASEVO: Validation failed:",
+        validation.message
+      );
+
+
+      return;
+    }
+
+
+    /*
+     * Disable button.
+     */
+
+    if (button) {
+
+      button.disabled =
+        true;
+
+
+      if (
+        button.tagName.toLowerCase() ===
+        "input"
+      ) {
+
+        button.value =
+          "Analyzing...";
+
+      } else {
+
+        button.innerText =
+          "Analyzing...";
+      }
+
+
+      button.style.opacity =
+        "0.7";
+
+      button.style.cursor =
+        "wait";
+    }
+
+
+    /*
+     * Status.
+     */
+
+    showStatus(
+      form,
+      "Connecting to CASEVO sourcing engine...",
+      "loading"
+    );
+
+
+    try {
+
+      const data =
+        await sendToWorker(
+          values
+        );
+
+
+      /*
+       * Success.
+       */
+
+      showStatus(
+        form,
+        "Sourcing analysis completed.",
+        "success"
+      );
+
+
+      renderResult(
+        form,
         data
       );
 
-      renderResults(
-        values,
-        data,
-        requestId
-      );
-
     } catch (error) {
+
       console.error(
-        "CASEVO supplier search error:",
+        "CASEVO: Sourcing request failed:",
         error
       );
 
-      renderError(
-        values,
-        error?.message ||
-          "Unable to connect to the supplier discovery service.",
-        requestId
+
+      showStatus(
+        form,
+        error.message ||
+          "Unable to connect to the CASEVO sourcing engine.",
+        "error"
       );
 
     } finally {
-      setLoading(
-        button,
-        false
-      );
+
+      /*
+       * Restore button.
+       */
+
+      if (button) {
+
+        button.disabled =
+          false;
+
+
+        if (
+          button.tagName.toLowerCase() ===
+          "input"
+        ) {
+
+          button.value =
+            originalText;
+
+        } else {
+
+          button.innerText =
+            originalText;
+        }
+
+
+        button.style.opacity =
+          "";
+
+        button.style.cursor =
+          "";
+      }
     }
   }
 
-  /* =========================================================
-     ATTACH EVENT
-     ========================================================= */
 
-  function attachAnalyzeHandler() {
-    const button =
-      findAnalyzeButton();
+  // ============================================================
+  // INITIALIZATION
+  // ============================================================
 
-    if (!button) {
-      console.warn(
-        "CASEVO: Analyze button not found."
-      );
+  function initialize() {
 
-      return false;
-    }
-
-    if (
-      button.dataset.casevoAttached ===
-      "true"
-    ) {
-      return true;
-    }
-
-    button.dataset.casevoAttached =
-      "true";
-
-    button.addEventListener(
-      "click",
-      handleAnalyze
+    console.log(
+      "CASEVO: Initializing sourcing frontend..."
     );
 
+
     const form =
-      button.closest("form");
+      findSourcingForm();
 
-    if (form) {
-      form.addEventListener(
-        "submit",
-        handleAnalyze
+
+    if (!form) {
+
+      console.warn(
+        "CASEVO: No sourcing form found."
       );
-    }
 
-    return true;
-  }
-
-  /* =========================================================
-     ENTER KEY SUPPORT
-     ========================================================= */
-
-  function attachKeyboardSupport() {
-    const textarea =
-      findTextarea();
-
-    if (!textarea) {
       return;
     }
 
-    textarea.addEventListener(
-      "keydown",
-      (event) => {
-        if (
-          event.key === "Enter" &&
-          (event.ctrlKey ||
-            event.metaKey)
-        ) {
-          event.preventDefault();
 
-          handleAnalyze(event);
-        }
-      }
+    const textarea =
+      findRequirementTextarea(
+        form
+      );
+
+    const productInput =
+      findProductInput(
+        form
+      );
+
+    const quantityInput =
+      findQuantityInput(
+        form
+      );
+
+    const priceInput =
+      findPriceInput(
+        form
+      );
+
+    const destinationInput =
+      findDestinationInput(
+        form
+      );
+
+    const button =
+      findAnalyzeButton(
+        form
+      );
+
+
+    console.log(
+      "========================================"
     );
-  }
 
-  /* =========================================================
-     AUTO-FILL DEMO REQUEST
-     ========================================================= */
+    console.log(
+      "CASEVO: FORM ELEMENTS"
+    );
 
-  function improveDemoFields() {
-    const fields =
-      getFormElements();
+    console.log(
+      "Requirement:",
+      textarea
+    );
+
+    console.log(
+      "Product:",
+      productInput
+    );
+
+    console.log(
+      "Quantity:",
+      quantityInput
+    );
+
+    console.log(
+      "Target Price:",
+      priceInput
+    );
+
+    console.log(
+      "Destination:",
+      destinationInput
+    );
+
+    console.log(
+      "Analyze Button:",
+      button
+    );
+
+    console.log(
+      "========================================"
+    );
+
 
     /*
-      We intentionally do NOT overwrite
-      user-entered values.
-    */
+     * Prevent duplicate initialization.
+     */
 
     if (
-      fields.product &&
-      !fields.product.value
+      form.dataset.casevoInitialized ===
+      "true"
     ) {
-      fields.product.setAttribute(
-        "autocomplete",
-        "off"
+
+      console.log(
+        "CASEVO: Form already initialized."
       );
+
+      return;
     }
 
-    if (
-      fields.quantity &&
-      !fields.quantity.value
-    ) {
-      fields.quantity.setAttribute(
-        "autocomplete",
-        "off"
-      );
-    }
 
-    if (
-      fields.targetPrice &&
-      !fields.targetPrice.value
-    ) {
-      fields.targetPrice.setAttribute(
-        "autocomplete",
-        "off"
-      );
-    }
+    form.dataset.casevoInitialized =
+      "true";
 
-    if (
-      fields.destination &&
-      !fields.destination.value
-    ) {
-      fields.destination.setAttribute(
-        "autocomplete",
-        "off"
-      );
-    }
-  }
 
-  /* =========================================================
-     DEBUG INFO
-     ========================================================= */
+    /*
+     * Submit event.
+     */
 
-  function exposeDebugAPI() {
-    window.CASEVO = {
-
-      version:
-        CASEVO.version,
-
-      endpoint:
-        API_ENDPOINT,
-
-      getFields:
-        getFormElements,
-
-      analyze:
-        handleAnalyze,
-
-      generateRequestId:
-        generateRequestId,
-
-      getLastRequest() {
-        try {
-          return JSON.parse(
-            localStorage.getItem(
-              "casevo_last_request"
-            ) || "null"
-          );
-        } catch {
-          return null;
-        }
-      },
-
-      getLastRequestId() {
-        try {
-          return localStorage.getItem(
-            "casevo_last_request_id"
-          );
-        } catch {
-          return null;
-        }
-      }
-    };
-  }
-
-  /* =========================================================
-     INITIALIZE
-     ========================================================= */
-
-  function initialize() {
-    injectRuntimeCSS();
-
-    exposeDebugAPI();
-
-    improveDemoFields();
-
-    attachAnalyzeHandler();
-
-    attachKeyboardSupport();
-
-    console.log(
-      `CASEVO AI frontend ${CASEVO.version} initialized.`
+    form.addEventListener(
+      "submit",
+      handleSubmit
     );
 
+
+    /*
+     * Button fallback.
+     *
+     * Some page builders do not correctly
+     * submit forms.
+     */
+
+    if (button) {
+
+      button.addEventListener(
+        "click",
+        function (event) {
+
+          console.log(
+            "CASEVO: Analyze button clicked."
+          );
+
+
+          /*
+           * If the button is not a submit button,
+           * manually trigger the submit handler.
+           */
+
+          const type =
+            (
+              button.getAttribute(
+                "type"
+              ) || ""
+            ).toLowerCase();
+
+
+          if (
+            type !== "submit" &&
+            !button.form
+          ) {
+
+            event.preventDefault();
+
+            handleSubmit({
+              preventDefault:
+                function () {},
+
+              currentTarget:
+                form
+            });
+          }
+        }
+      );
+    }
+
+
+    /*
+     * Debug API endpoint.
+     */
+
     console.log(
-      `API endpoint: ${API_ENDPOINT}`
+      "CASEVO: API endpoint ready:",
+      API_ENDPOINT
+    );
+
+
+    console.log(
+      "CASEVO: Frontend initialization complete."
     );
   }
 
-  /* =========================================================
-     WAIT FOR DOM
-     ========================================================= */
+
+  // ============================================================
+  // START
+  // ============================================================
 
   if (
     document.readyState ===
     "loading"
   ) {
+
     document.addEventListener(
       "DOMContentLoaded",
       initialize
     );
+
   } else {
+
     initialize();
   }
-
-  /* =========================================================
-     HANDLE DYNAMIC PAGE CONTENT
-     ========================================================= */
-
-  const observer =
-    new MutationObserver(() => {
-      attachAnalyzeHandler();
-    });
-
-  observer.observe(
-    document.documentElement,
-    {
-      childList: true,
-      subtree: true
-    }
-  );
 
 })();
