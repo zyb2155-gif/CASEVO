@@ -1,8 +1,8 @@
 /* =========================================================
-   CASEVO AI SOURCING — FRONTEND
-   No OpenAI API key required.
-   Sends sourcing requirements to /api/sourcing
-   ========================================================= */
+ CASEVO AI SOURCING — FRONTEND
+ No OpenAI API key required.
+ Sends sourcing requirements to /api/sourcing
+ ========================================================= */
 
 (function () {
   "use strict";
@@ -237,232 +237,7 @@
           font-size:18px;
           line-height:1.5;
         ">
-          ${escapeHtml(message)}
-        </div>
-      </div>
-    `;
-
-    resultContainer.scrollIntoView({
-      behavior: "smooth",
-      block: "start"
-    });
-  }
-
-  function renderResult(data) {
-    const brief = data.brief || {};
-    const analysis = data.analysis || {};
-    const normalized = analysis.normalized || {};
-    const scoring = analysis.scoring || {};
-    const matches = analysis.matches || [];
-
-    const requirements = Array.isArray(normalized.requirements)
-      ? normalized.requirements
-      : [];
-
-    const tags = Array.isArray(normalized.tags)
-      ? normalized.tags
-      : [];
-
-    resultContainer.innerHTML = `
-      <div style="
-        background:#f7f1e6;
-        border:1px solid #ded3c2;
-        padding:32px;
-        box-sizing:border-box;
-        font-family:Arial,sans-serif;
-        color:#1d1b18;
-      ">
-
-        <div style="
-          display:flex;
-          justify-content:space-between;
-          gap:20px;
-          align-items:flex-start;
-          margin-bottom:30px;
-          flex-wrap:wrap;
-        ">
-
-          <div>
-            <div style="
-              color:#b42f24;
-              font-size:11px;
-              letter-spacing:2px;
-              text-transform:uppercase;
-              margin-bottom:10px;
-            ">
-              CASEVO AI / SOURCING BRIEF
-            </div>
-
-            <h2 style="
-              margin:0;
-              font-family:Georgia,serif;
-              font-size:32px;
-              font-weight:500;
-            ">
-              ${escapeHtml(
-                normalized.product || brief.product || "Sourcing Requirement"
-              )}
-            </h2>
-          </div>
-
-          <div style="
-            border:1px solid #cdbfae;
-            padding:14px 20px;
-            min-width:150px;
-            text-align:center;
-            background:#fffaf2;
-          ">
-            <div style="
-              font-size:10px;
-              letter-spacing:1.5px;
-              text-transform:uppercase;
-              color:#756d63;
-              margin-bottom:5px;
-            ">
-              CASEVO SCORE
-            </div>
-
-            <div style="
-              font-size:30px;
-              font-weight:600;
-            ">
-              ${escapeHtml(scoring.score ?? "—")}
-              <span style="font-size:14px;color:#777;">/100</span>
-            </div>
-          </div>
-
-        </div>
-
-        <div style="
-          display:grid;
-          grid-template-columns:repeat(auto-fit,minmax(180px,1fr));
-          gap:1px;
-          background:#d8cdbc;
-          margin-bottom:30px;
-        ">
-
-          ${infoCard(
-            "PRODUCT / MATERIAL",
-            normalized.product || brief.product || "Not specified"
-          )}
-
-          ${infoCard(
-            "QUANTITY",
-            normalized.quantity || brief.quantity || "Not specified"
-          )}
-
-          ${infoCard(
-            "TARGET PRICE",
-            normalized.targetPrice || brief.targetPrice || "Not specified"
-          )}
-
-          ${infoCard(
-            "DESTINATION",
-            normalized.destination || brief.destination || "Not specified"
-          )}
-
-        </div>
-
-        <div style="
-          display:grid;
-          grid-template-columns:minmax(0,1.4fr) minmax(280px,0.8fr);
-          gap:28px;
-        ">
-
-          <div>
-
-            <div style="
-              font-size:11px;
-              letter-spacing:2px;
-              color:#b42f24;
-              text-transform:uppercase;
-              margin-bottom:10px;
-            ">
-              NORMALIZED REQUIREMENTS
-            </div>
-
-            <div style="
-              background:#fffaf3;
-              border:1px solid #ddd2c2;
-              padding:22px;
-            ">
-
-              ${
-                requirements.length
-                  ? requirements
-                      .map(
-                        (item) => `
-                          <div style="
-                            display:flex;
-                            gap:12px;
-                            padding:10px 0;
-                            border-bottom:1px solid #e7ded2;
-                          ">
-                            <span style="color:#b42f24;">01</span>
-                            <span>${escapeHtml(item)}</span>
-                          </div>
-                        `
-                      )
-                      .join("")
-                  : `
-                    <div style="color:#777;">
-                      No detailed specifications were detected.
-                    </div>
-                  `
-              }
-
-            </div>
-
-            ${
-              tags.length
-                ? `
-                  <div style="
-                    display:flex;
-                    gap:8px;
-                    flex-wrap:wrap;
-                    margin-top:16px;
-                  ">
-                    ${tags
-                      .map(
-                        (tag) => `
-                          <span style="
-                            border:1px solid #cfc3b4;
-                            padding:6px 10px;
-                            font-size:11px;
-                            letter-spacing:.5px;
-                            background:#fffaf4;
-                          ">
-                            ${escapeHtml(tag)}
-                          </span>
-                        `
-                      )
-                      .join("")}
-                  </div>
-                `
-                : ""
-            }
-
-          </div>
-
-          <div>
-
-            <div style="
-              font-size:11px;
-              letter-spacing:2px;
-              color:#b42f24;
-              text-transform:uppercase;
-              margin-bottom:10px;
-            ">
-              SOURCING READINESS
-            </div>
-
-            <div style="
-              background:#211f1c;
-              color:white;
-              padding:24px;
-            ">
-
-              <div style="
+               <div style="
                 display:flex;
                 justify-content:space-between;
                 margin-bottom:18px;
@@ -627,100 +402,58 @@
     });
   }
 
-  function infoCard(label, value) {
-    return `
-      <div style="
-        background:#fffaf3;
-        padding:18px;
-      ">
-        <div style="
-          font-size:9px;
-          letter-spacing:1.5px;
-          color:#81786e;
-          margin-bottom:8px;
-        ">
-          ${escapeHtml(label)}
-        </div>
-
-        <div style="
-          font-size:14px;
-          line-height:1.4;
-        ">
-          ${escapeHtml(value)}
-        </div>
-      </div>
-    `;
-  }
-
   // ---------------------------------------------------------
-  // Submit
+  // Submit sourcing request
   // ---------------------------------------------------------
 
   async function submitSourcingRequest(event) {
     event.preventDefault();
 
-    const requirement = requirementField
-      ? requirementField.value.trim()
-      : "";
+    const payload = {
+      requirement:
+        requirementField?.value?.trim() || "",
 
-    const product = productField
-      ? productField.value.trim()
-      : "";
+      product:
+        productField?.value?.trim() || "",
 
-    const quantity = quantityField
-      ? quantityField.value.trim()
-      : "";
+      quantity:
+        quantityField?.value?.trim() || "",
 
-    const targetPrice = priceField
-      ? priceField.value.trim()
-      : "";
+      targetPrice:
+        priceField?.value?.trim() || "",
 
-    const destination = destinationField
-      ? destinationField.value.trim()
-      : "";
+      destination:
+        destinationField?.value?.trim() || ""
+    };
 
-    if (!requirement && !product) {
+    if (
+      !payload.requirement &&
+      !payload.product
+    ) {
       renderError(
-        "Please describe what you want to source before running the analysis."
+        "Please describe what you are sourcing."
       );
-
-      if (requirementField) {
-        requirementField.focus();
-      }
-
       return;
     }
-
-    const payload = {
-      requirement,
-      product,
-      quantity,
-      targetPrice,
-      destination,
-      source: "CASEVO website",
-      timestamp: new Date().toISOString()
-    };
 
     setLoading(true);
 
     resultContainer.innerHTML = `
       <div style="
-        padding:32px;
-        background:#f7f1e6;
-        border:1px solid #ded3c2;
+        background:#211f1c;
+        color:white;
+        padding:40px;
         text-align:center;
-        color:#625b53;
-        font-family:Arial,sans-serif;
       ">
         <div style="
-          font-size:11px;
-          letter-spacing:2px;
-          text-transform:uppercase;
-          color:#b42f24;
-          margin-bottom:12px;
-        ">
-          CASEVO AI
-        </div>
+          width:34px;
+          height:34px;
+          border:2px solid rgba(255,255,255,.25);
+          border-top-color:#d8a84e;
+          border-radius:50%;
+          animation:casevoSpin 1s linear infinite;
+          margin:0 auto 22px;
+        "></div>
 
         <div style="
           font-family:Georgia,serif;
@@ -764,7 +497,10 @@
       renderResult(data);
 
     } catch (error) {
-      console.error("CASEVO sourcing error:", error);
+      console.error(
+        "CASEVO sourcing error:",
+        error
+      );
 
       renderError(
         error.message ||
@@ -780,13 +516,19 @@
   // Bind form
   // ---------------------------------------------------------
 
-  form.addEventListener("submit", submitSourcingRequest);
+  form.addEventListener(
+    "submit",
+    submitSourcingRequest
+  );
 
   if (submitButton) {
-    submitButton.addEventListener("click", function () {
-      // Native form submit handles the actual request.
-      // This listener intentionally does not submit twice.
-    });
+    submitButton.addEventListener(
+      "click",
+      function () {
+        // Native form submit handles the actual request.
+        // This listener intentionally does not submit twice.
+      }
+    );
   }
 
   // ---------------------------------------------------------
@@ -796,9 +538,14 @@
   window.CASEVO = window.CASEVO || {};
 
   window.CASEVO.analyze = function (request) {
-    if (!request || typeof request !== "object") {
+    if (
+      !request ||
+      typeof request !== "object"
+    ) {
       return Promise.reject(
-        new Error("Invalid CASEVO sourcing request.")
+        new Error(
+          "Invalid CASEVO sourcing request."
+        )
       );
     }
 
@@ -809,11 +556,13 @@
       },
       body: JSON.stringify(request)
     }).then(async (response) => {
+
       const data = await response.json();
 
       if (!response.ok) {
         throw new Error(
-          data.error || "CASEVO API request failed."
+          data.error ||
+            "CASEVO API request failed."
         );
       }
 
@@ -824,4 +573,5 @@
   console.log(
     "CASEVO AI Sourcing frontend initialized — API key not required."
   );
-})();
+
+})();       
