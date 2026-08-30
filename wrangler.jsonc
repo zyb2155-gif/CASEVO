@@ -1,14 +1,8 @@
-
 {
-  "$schema": "node_modules/wrangler/config-schema.json",
   "name": "casevo",
-  "main": "./worker.js",
-  "compatibility_date": "2026-08-28",
+  "main": "worker.js",
+  "compatibility_date": "2026-08-30",
   "assets": {
-    "directory": "./",
     "binding": "ASSETS"
-  },
-  "observability": {
-    "enabled": true
   }
 }
