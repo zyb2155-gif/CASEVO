@@ -1,36 +1,67 @@
-/* =========================================================
-   CASEVO AI
-   China Sourcing Intelligence
-   Front-end sourcing engine
-   Final Production Version
-   ========================================================= */
+/* ============================================================
+   CASEVO AI SOURCING — FINAL FRONTEND
+   ============================================================
 
-(() => {
+   API:
+   POST /api/sourcing
+
+   Payload:
+   {
+     requirement,
+     product,
+     quantity,
+     targetPrice,
+     destination
+   }
+
+   Important:
+   - Never sends an empty requirement when the form contains data.
+   - Uses the textarea as the primary sourcing requirement.
+   - Automatically builds a requirement from the other fields
+     when the textarea is empty.
+   - No API key is exposed in the browser.
+   ============================================================ */
+
+(function () {
   "use strict";
-
-  /* ---------------------------------------------------------
-     CONFIGURATION
-     --------------------------------------------------------- */
 
   const API_ENDPOINT = "/api/sourcing";
 
-  const DEFAULT_REQUEST =
-    "Premium full-grain leather shoe upper for men's sneakers, 1.4mm, black, 5,000 pairs, shipping to the United States.";
+  console.log("CASEVO frontend loading...");
+  console.log("CASEVO API endpoint:", API_ENDPOINT);
 
-  const REQUEST_TIMEOUT = 30000;
+  /* ============================================================
+     BASIC HELPERS
+     ============================================================ */
 
+  function qs(selector, root) {
+    return (root || document).querySelector(selector);
+  }
 
-  /* ---------------------------------------------------------
-     DOM HELPERS
-     --------------------------------------------------------- */
+  function qsa(selector, root) {
+    return Array.from(
+      (root || document).querySelectorAll(selector)
+    );
+  }
 
-  function qs(selectors) {
-    if (!Array.isArray(selectors)) {
-      selectors = [selectors];
-    }
+  function clean(value) {
+    return String(value == null ? "" : value)
+      .replace(/\s+/g, " ")
+      .trim();
+  }
 
+  function escapeHtml(value) {
+    return String(value == null ? "" : value)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#039;");
+  }
+
+  function firstExisting(selectors, root) {
     for (const selector of selectors) {
-      const element = document.querySelector(selector);
+      const element = qs(selector, root);
 
       if (element) {
         return element;
@@ -40,1773 +71,1656 @@
     return null;
   }
 
-  function qsa(selector) {
-    return Array.from(document.querySelectorAll(selector));
-  }
-
-  function text(value) {
-    return value == null ? "" : String(value).trim();
-  }
-
-  function escapeHtml(value) {
-    return text(value)
-      .replace(/&/g, "&amp;")
-      .replace(/</g, "&lt;")
-      .replace(/>/g, "&gt;")
-      .replace(/"/g, "&quot;")
-      .replace(/'/g, "&#039;");
-  }
-
-
-  /* ---------------------------------------------------------
-     FIND FORM ELEMENTS
-     --------------------------------------------------------- */
-
-  const descriptionField = qs([
-    "#sourcing-request",
-    "#request",
-    "#description",
-    "#requirements",
-    'textarea[name="request"]',
-    'textarea[name="description"]',
-    'textarea[name="requirements"]',
-    "textarea"
-  ]);
-
-  const materialField = qs([
-    "#product-material",
-    "#material",
-    "#product",
-    'input[name="product"]',
-    'input[name="material"]',
-    'input[name="product_material"]'
-  ]);
-
-  const quantityField = qs([
-    "#quantity",
-    'input[name="quantity"]'
-  ]);
-
-  const targetPriceField = qs([
-    "#target-price",
-    "#price",
-    'input[name="target_price"]',
-    'input[name="price"]'
-  ]);
-
-  const destinationField = qs([
-    "#destination",
-    "#shipping-destination",
-    "#ship-to",
-    'input[name="destination"]',
-    'input[name="shipping_destination"]'
-  ]);
-
-  const submitButton = qs([
-    "#analyze-button",
-    "#analyze",
-    "#find-matches",
-    "#submit-sourcing",
-    'button[type="submit"]',
-    'input[type="submit"]'
-  ]);
-
-
-  /* ---------------------------------------------------------
-     FIND RESULT CONTAINERS
-     --------------------------------------------------------- */
-
-  let resultContainer = qs([
-    "#sourcing-result",
-    "#results",
-    "#analysis-result",
-    "#supplier-results",
-    ".sourcing-result"
-  ]);
-
-  let errorContainer = qs([
-    "#sourcing-error",
-    "#error-result",
-    "#analysis-error",
-    ".sourcing-error"
-  ]);
-
-
-  /* ---------------------------------------------------------
-     CREATE RESULT CONTAINER IF NECESSARY
-     --------------------------------------------------------- */
-
-  function ensureResultContainer() {
-    if (resultContainer) {
-      return resultContainer;
-    }
-
-    const anchor =
-      qs([
-        "#sourcing-form",
-        "#ai-sourcing",
-        ".sourcing-form",
-        "form"
-      ]) || descriptionField;
-
-    if (!anchor) {
-      return null;
-    }
-
-    resultContainer = document.createElement("div");
-
-    resultContainer.id = "sourcing-result";
-
-    resultContainer.style.marginTop = "32px";
-
-    anchor.parentNode.insertBefore(
-      resultContainer,
-      anchor.nextSibling
-    );
-
-    return resultContainer;
-  }
-
-
-  function ensureErrorContainer() {
-    if (errorContainer) {
-      return errorContainer;
-    }
-
-    const anchor =
-      resultContainer ||
-      qs([
-        "#sourcing-form",
-        "#ai-sourcing",
-        ".sourcing-form",
-        "form"
-      ]) ||
-      descriptionField;
-
-    if (!anchor) {
-      return null;
-    }
-
-    errorContainer = document.createElement("div");
-
-    errorContainer.id = "sourcing-error";
-
-    errorContainer.style.marginTop = "24px";
-
-    anchor.parentNode.insertBefore(
-      errorContainer,
-      anchor.nextSibling
-    );
-
-    return errorContainer;
-  }
-
-
-  /* ---------------------------------------------------------
-     REQUEST ID
-     --------------------------------------------------------- */
-
-  function generateRequestId() {
-    const now = new Date();
-
-    const datePart =
-      now.getTime().toString(36).toUpperCase();
-
-    const randomPart =
-      Math.random()
-        .toString(36)
-        .substring(2, 8)
-        .toUpperCase();
-
-    return `CASEVO-${datePart}-${randomPart}`;
-  }
-
-
-  /* ---------------------------------------------------------
-     NORMALIZE TEXT
-     --------------------------------------------------------- */
-
-  function normalizeSpaces(value) {
-    return text(value)
-      .replace(/\s+/g, " ")
-      .trim();
-  }
-
-
-  /* ---------------------------------------------------------
-     PARSE PRODUCT / MATERIAL
-     --------------------------------------------------------- */
-
-  function parseMaterial(description) {
-    const value = normalizeSpaces(description);
-
-    if (!value) {
-      return "";
-    }
-
-    const patterns = [
-      /(?:premium\s+)?full[-\s]?grain\s+leather\s+shoe\s+upper/i,
-      /full[-\s]?grain\s+leather\s+shoe\s+upper/i,
-      /leather\s+shoe\s+upper/i,
-      /shoe\s+upper/i,
-      /upper\s+leather/i,
-      /leather/i,
-      /rubber/i,
-      /fabric/i
-    ];
-
-    for (const pattern of patterns) {
-      const match = value.match(pattern);
-
-      if (match) {
-        return normalizeSpaces(match[0]);
-      }
-    }
-
-    /*
-      If no known material was detected,
-      use the first meaningful phrase before
-      a specification such as thickness, color,
-      quantity or destination.
-    */
-
-    let fallback = value
-      .split(/[,;|]/)[0]
-      .replace(
-        /\b\d+(?:\.\d+)?\s*mm\b/gi,
-        ""
-      )
-      .trim();
-
-    fallback = fallback
-      .replace(
-        /\b\d[\d,]*\s*(?:pairs?|pcs?|pieces?|units?)\b/gi,
-        ""
-      )
-      .trim();
-
-    return normalizeSpaces(fallback);
-  }
-
-
-  /* ---------------------------------------------------------
-     PARSE QUANTITY
-     --------------------------------------------------------- */
-
-  function parseQuantity(description) {
-    const value = normalizeSpaces(description);
-
-    if (!value) {
-      return "";
-    }
-
-    const patterns = [
-      /(\d[\d,]*)\s*(pairs?)/i,
-      /(\d[\d,]*)\s*(pcs?)/i,
-      /(\d[\d,]*)\s*(pieces?)/i,
-      /quantity\s*[:=]?\s*(\d[\d,]*)/i,
-      /(\d[\d,]*)\s*units?/i
-    ];
-
-    for (const pattern of patterns) {
-      const match = value.match(pattern);
-
-      if (!match) {
-        continue;
-      }
-
-      if (match[2]) {
-        return `${match[1]} ${match[2]}`;
-      }
-
-      return match[1];
-    }
-
-    return "";
-  }
-
-
-  /* ---------------------------------------------------------
-     PARSE TARGET PRICE
-     --------------------------------------------------------- */
-
-  function parseTargetPrice(description) {
-    const value = normalizeSpaces(description);
-
-    if (!value) {
-      return "";
-    }
-
-    const patterns = [
-      /(?:target\s+price|price|budget)\s*[:=]?\s*([^\s,;]+)/i,
-      /(\$\s?\d+(?:\.\d+)?(?:\s*\/\s*\w+)?)/i,
-      /(\d+(?:\.\d+)?\s*(?:usd|dollars?))/i
-    ];
-
-    for (const pattern of patterns) {
-      const match = value.match(pattern);
-
-      if (match) {
-        return normalizeSpaces(match[1]);
-      }
-    }
-
-    return "";
-  }
-
-
-  /* ---------------------------------------------------------
-     PARSE DESTINATION
-     --------------------------------------------------------- */
-
-  function parseDestination(description) {
-    const value = normalizeSpaces(description);
-
-    if (!value) {
-      return "";
-    }
-
-    const patterns = [
-      /shipping\s+to\s+(?:the\s+)?([A-Za-z][A-Za-z .'-]+?)(?:\.|,|$)/i,
-      /ship(?:ping)?\s+(?:to|for)\s+(?:the\s+)?([A-Za-z][A-Za-z .'-]+?)(?:\.|,|$)/i,
-      /deliver(?:y|ing)?\s+(?:to|for)\s+(?:the\s+)?([A-Za-z][A-Za-z .'-]+?)(?:\.|,|$)/i,
-      /destination\s*[:=]\s*([A-Za-z][A-Za-z .'-]+)/i,
-      /to\s+(?:the\s+)?(United States|USA|US|United Kingdom|UK|Germany|France|Italy|Spain|Canada|Australia|Japan|South Korea|India|Mexico|Brazil|Netherlands|Belgium|Vietnam|Thailand|Singapore)/i
-    ];
-
-    for (const pattern of patterns) {
-      const match = value.match(pattern);
-
-      if (!match) {
-        continue;
-      }
-
-      let destination = normalizeSpaces(match[1]);
-
-      destination = destination
-        .replace(/[.,]+$/, "")
-        .trim();
-
-      if (!destination) {
-        continue;
-      }
-
-      const normalized = destination.toLowerCase();
-
-      if (
-        normalized === "usa" ||
-        normalized === "us"
-      ) {
-        return "United States";
-      }
-
-      if (
-        normalized === "uk"
-      ) {
-        return "United Kingdom";
-      }
-
-      return destination;
-    }
-
-    return "";
-  }
-
-
-  /* ---------------------------------------------------------
-     AUTO-FILL STRUCTURED FIELDS
-     --------------------------------------------------------- */
-
-  function populateStructuredFields() {
-    if (!descriptionField) {
-      return;
-    }
-
-    const description =
-      normalizeSpaces(descriptionField.value);
-
-    if (!description) {
-      return;
-    }
-
-    /*
-      Only populate empty fields.
-      This means user-entered values
-      always take priority.
-    */
-
-    if (
-      materialField &&
-      !text(materialField.value)
-    ) {
-      const material = parseMaterial(description);
-
-      if (material) {
-        materialField.value = material;
-      }
-    }
-
-    if (
-      quantityField &&
-      !text(quantityField.value)
-    ) {
-      const quantity = parseQuantity(description);
-
-      if (quantity) {
-        quantityField.value = quantity;
-      }
-    }
-
-    if (
-      targetPriceField &&
-      !text(targetPriceField.value)
-    ) {
-      const price = parseTargetPrice(description);
-
-      if (price) {
-        targetPriceField.value = price;
-      }
-    }
-
-    if (
-      destinationField &&
-      !text(destinationField.value)
-    ) {
-      const destination =
-        parseDestination(description);
-
-      if (destination) {
-        destinationField.value = destination;
-      }
-    }
-  }
-
-
-  /* ---------------------------------------------------------
-     BUILD SOURCING REQUEST
-     --------------------------------------------------------- */
-
-  function buildSourcingRequest() {
-    const description =
-      normalizeSpaces(
-        descriptionField
-          ? descriptionField.value
-          : ""
-      );
-
-    let material =
-      materialField
-        ? normalizeSpaces(materialField.value)
-        : "";
-
-    let quantity =
-      quantityField
-        ? normalizeSpaces(quantityField.value)
-        : "";
-
-    let targetPrice =
-      targetPriceField
-        ? normalizeSpaces(targetPriceField.value)
-        : "";
-
-    let destination =
-      destinationField
-        ? normalizeSpaces(destinationField.value)
-        : "";
-
-    /*
-      CRITICAL FIX:
-      Parse missing structured fields
-      directly from the main request.
-    */
-
-    if (description) {
-      if (!material) {
-        material = parseMaterial(description);
-      }
-
-      if (!quantity) {
-        quantity = parseQuantity(description);
-      }
-
-      if (!targetPrice) {
-        targetPrice = parseTargetPrice(description);
-      }
-
-      if (!destination) {
-        destination =
-          parseDestination(description);
-      }
-    }
-
-    /*
-      Normalize common destination values.
-    */
-
-    if (
-      /^(usa|us|u\.s\.a\.?|u\.s\.?)$/i.test(
-        destination
-      )
-    ) {
-      destination = "United States";
-    }
-
-    if (
-      /^uk$/i.test(destination)
-    ) {
-      destination = "United Kingdom";
-    }
-
-    return {
-      request: description,
-      description,
-      product: material,
-      material,
-      quantity,
-      target_price: targetPrice,
-      targetPrice,
-      destination
-    };
-  }
-
-
-  /* ---------------------------------------------------------
-     VALIDATE REQUEST
-     --------------------------------------------------------- */
-
-  function validateRequest(data) {
-    const errors = [];
-
-    if (!data.request) {
-      errors.push(
-        "Please describe what you want to source."
-      );
-    }
-
-    /*
-      Destination is mandatory because the
-      supplier search needs a target market.
-
-      However, it can be automatically extracted
-      from the main request.
-    */
-
-    if (!data.destination) {
-      errors.push(
-        "Please enter a destination or include shipping information in your sourcing request."
-      );
-    }
-
-    return errors;
-  }
-
-
-  /* ---------------------------------------------------------
-     UI STATE
-     --------------------------------------------------------- */
-
-  function setLoading(isLoading) {
-    if (!submitButton) {
-      return;
-    }
-
-    if (isLoading) {
-      submitButton.disabled = true;
-
-      submitButton.dataset.originalText =
-        submitButton.textContent;
-
-      submitButton.textContent =
-        "Analyzing & Searching...";
-
-      submitButton.style.opacity = "0.65";
-      submitButton.style.cursor = "wait";
-    } else {
-      submitButton.disabled = false;
-
-      const original =
-        submitButton.dataset.originalText;
-
-      if (original) {
-        submitButton.textContent = original;
-      }
-
-      submitButton.style.opacity = "";
-      submitButton.style.cursor = "";
-    }
-  }
-
-
-  /* ---------------------------------------------------------
-     SHOW ERROR
-     --------------------------------------------------------- */
-
-  function showError(message, requestId) {
-    const container =
-      ensureErrorContainer();
-
-    if (!container) {
-      return;
-    }
-
-    container.innerHTML = `
-      <div class="casevo-error-panel"
-           style="
-             border:1px solid #c83227;
-             padding:24px;
-             background:#fbf7ef;
-           ">
-
-        <div style="
-          font-size:10px;
-          letter-spacing:.18em;
-          text-transform:uppercase;
-          color:#b52c23;
-          margin-bottom:12px;
-        ">
-          CASEVO AI / ERROR
-        </div>
-
-        <h3 style="
-          margin:0 0 10px;
-          font-size:22px;
-        ">
-          Supplier discovery could not be completed.
-        </h3>
-
-        <p style="
-          margin:0 0 12px;
-          line-height:1.6;
-        ">
-          ${escapeHtml(message)}
-        </p>
-
-        ${
-          requestId
-            ? `
-              <div style="
-                font-size:11px;
-                opacity:.65;
-              ">
-                Request ID: ${escapeHtml(requestId)}
-              </div>
-            `
-            : ""
-        }
-
-      </div>
-    `;
-
-    container.scrollIntoView({
-      behavior: "smooth",
-      block: "center"
+  /* ============================================================
+     FIELD DISCOVERY
+     ============================================================ */
+
+  function findByLabel(labelText, root) {
+    const scope = root || document;
+
+    const labels = qsa("label", scope);
+
+    const target = labels.find(function (label) {
+      return clean(label.textContent)
+        .toLowerCase()
+        .includes(labelText.toLowerCase());
     });
-  }
 
-
-  /* ---------------------------------------------------------
-     CLEAR ERROR
-     --------------------------------------------------------- */
-
-  function clearError() {
-    if (errorContainer) {
-      errorContainer.innerHTML = "";
-    }
-  }
-
-
-  /* ---------------------------------------------------------
-     SHOW LOADING RESULT
-     --------------------------------------------------------- */
-
-  function showLoadingResult() {
-    const container =
-      ensureResultContainer();
-
-    if (!container) {
-      return;
-    }
-
-    container.innerHTML = `
-      <div
-        style="
-          border:1px solid #d7cec0;
-          padding:28px;
-          background:#fbf7ef;
-        "
-      >
-
-        <div style="
-          font-size:10px;
-          letter-spacing:.18em;
-          text-transform:uppercase;
-          margin-bottom:14px;
-          color:#b52c23;
-        ">
-          CASEVO AI / SOURCING ANALYSIS
-        </div>
-
-        <h2 style="
-          margin:0 0 12px;
-          font-family:Georgia,serif;
-          font-size:30px;
-        ">
-          Searching for real suppliers.
-        </h2>
-
-        <p style="
-          margin:0;
-          line-height:1.7;
-          opacity:.72;
-        ">
-          CASEVO is analyzing the sourcing requirement
-          and searching public supplier information.
-        </p>
-
-      </div>
-    `;
-  }
-
-
-  /* ---------------------------------------------------------
-     FETCH WITH TIMEOUT
-     --------------------------------------------------------- */
-
-  async function fetchWithTimeout(
-    url,
-    options = {},
-    timeout = REQUEST_TIMEOUT
-  ) {
-    const controller =
-      new AbortController();
-
-    const timer =
-      setTimeout(
-        () => controller.abort(),
-        timeout
-      );
-
-    try {
-      return await fetch(url, {
-        ...options,
-        signal: controller.signal
-      });
-    } finally {
-      clearTimeout(timer);
-    }
-  }
-
-
-  /* ---------------------------------------------------------
-     API REQUEST
-     --------------------------------------------------------- */
-
-  async function callSourcingAPI(payload) {
-    const response =
-      await fetchWithTimeout(
-        API_ENDPOINT,
-        {
-          method: "POST",
-
-          headers: {
-            "Content-Type":
-              "application/json",
-            "Accept":
-              "application/json"
-          },
-
-          body: JSON.stringify(payload)
-        }
-      );
-
-    let body = null;
-
-    try {
-      body = await response.json();
-    } catch {
-      body = null;
-    }
-
-    if (!response.ok) {
-      const message =
-        body &&
-        (
-          body.error ||
-          body.message ||
-          body.detail
-        );
-
-      throw new Error(
-        message ||
-        `Supplier search failed (${response.status}).`
-      );
-    }
-
-    if (!body) {
-      throw new Error(
-        "The supplier search returned an invalid response."
-      );
-    }
-
-    return body;
-  }
-
-
-  /* ---------------------------------------------------------
-     EXTRACT SUPPLIERS
-     --------------------------------------------------------- */
-
-  function extractSuppliers(data) {
-    if (!data) {
-      return [];
-    }
-
-    const candidates = [
-      data.suppliers,
-      data.matches,
-      data.results,
-      data.supplierMatches,
-      data.supplier_matches,
-      data.data &&
-        data.data.suppliers,
-      data.data &&
-        data.data.matches,
-      data.data &&
-        data.data.results
-    ];
-
-    for (const candidate of candidates) {
-      if (Array.isArray(candidate)) {
-        return candidate;
-      }
-    }
-
-    return [];
-  }
-
-
-  /* ---------------------------------------------------------
-     EXTRACT SCORE
-     --------------------------------------------------------- */
-
-  function extractScore(data) {
-    if (!data) {
+    if (!target) {
       return null;
     }
 
-    const values = [
-      data.score,
-      data.casevoScore,
-      data.casevo_score,
-      data.data &&
-        data.data.score,
-      data.data &&
-        data.data.casevoScore,
-      data.data &&
-        data.data.casevo_score
-    ];
+    const forId = target.getAttribute("for");
 
-    for (const value of values) {
-      if (
-        value !== null &&
-        value !== undefined &&
-        value !== ""
-      ) {
-        const number =
-          Number(
-            String(value)
-              .replace(/[^\d.]/g, "")
-          );
+    if (forId) {
+      const linked = document.getElementById(forId);
 
-        if (
-          Number.isFinite(number)
-        ) {
-          return Math.max(
-            0,
-            Math.min(100, number)
-          );
-        }
+      if (linked) {
+        return linked;
+      }
+    }
+
+    const parent = target.parentElement;
+
+    if (parent) {
+      const field = qs(
+        "textarea, input, select",
+        parent
+      );
+
+      if (field) {
+        return field;
       }
     }
 
     return null;
   }
 
-
-  /* ---------------------------------------------------------
-     EXTRACT REQUEST ID
-     --------------------------------------------------------- */
-
-  function extractRequestId(data, fallback) {
-    if (!data) {
-      return fallback;
+  function findTextarea(form) {
+    if (!form) {
+      return null;
     }
 
     return (
-      data.requestId ||
-      data.request_id ||
-      data.id ||
-      (data.data &&
-        (
-          data.data.requestId ||
-          data.data.request_id ||
-          data.data.id
-        )) ||
-      fallback
+      firstExisting(
+        [
+          "#requirement",
+          "#requirements",
+          "#sourcing-requirement",
+          "#sourcingRequirement",
+          "#sourcing-brief",
+          "#sourcingBrief",
+          "#brief",
+          "textarea[name='requirement']",
+          "textarea[name='requirements']",
+          "textarea[name='request']",
+          "textarea[name='sourcing_requirement']",
+          "textarea[name='brief']",
+          "textarea"
+        ],
+        form
+      ) ||
+      findByLabel("what are you sourcing", form)
     );
   }
 
-
-  /* ---------------------------------------------------------
-     SUPPLIER NAME
-     --------------------------------------------------------- */
-
-  function supplierName(supplier) {
-    if (!supplier) {
-      return "Supplier";
+  function findInput(form, selectors, labelText) {
+    if (!form) {
+      return null;
     }
 
-    return (
-      supplier.name ||
-      supplier.company ||
-      supplier.companyName ||
-      supplier.company_name ||
-      "Supplier"
-    );
-  }
+    const field = firstExisting(selectors, form);
 
-
-  /* ---------------------------------------------------------
-     SUPPLIER DESCRIPTION
-     --------------------------------------------------------- */
-
-  function supplierDescription(supplier) {
-    if (!supplier) {
-      return "";
+    if (field) {
+      return field;
     }
 
-    return (
-      supplier.description ||
-      supplier.summary ||
-      supplier.capability ||
-      supplier.capabilities ||
-      ""
-    );
-  }
-
-
-  /* ---------------------------------------------------------
-     SUPPLIER URL
-     --------------------------------------------------------- */
-
-  function supplierUrl(supplier) {
-    if (!supplier) {
-      return "";
+    if (labelText) {
+      return findByLabel(labelText, form);
     }
 
-    return (
-      supplier.website ||
-      supplier.url ||
-      supplier.source ||
-      ""
-    );
+    return null;
   }
 
+  /* ============================================================
+     FIND THE CORRECT SOURCING FORM
+     ============================================================ */
 
-  /* ---------------------------------------------------------
-     SUPPLIER LOCATION
-     --------------------------------------------------------- */
+  function findSourcingForm() {
+    const forms = qsa("form");
 
-  function supplierLocation(supplier) {
-    if (!supplier) {
-      return "";
+    if (!forms.length) {
+      return null;
     }
 
-    return (
-      supplier.location ||
-      supplier.city ||
-      supplier.address ||
-      supplier.region ||
-      ""
-    );
+    /*
+     * Prefer a form containing a textarea.
+     * This is important because the sourcing textarea
+     * is the main requirement field.
+     */
+
+    const textareaForm = forms.find(function (form) {
+      return !!findTextarea(form);
+    });
+
+    if (textareaForm) {
+      return textareaForm;
+    }
+
+    /*
+     * Second attempt:
+     * find a form containing sourcing-related fields.
+     */
+
+    const sourcingForm = forms.find(function (form) {
+      const text = (
+        form.innerText ||
+        form.textContent ||
+        ""
+      ).toLowerCase();
+
+      return (
+        text.includes("what are you sourcing") ||
+        text.includes("product / material") ||
+        text.includes("quantity") ||
+        text.includes("target price") ||
+        text.includes("destination")
+      );
+    });
+
+    if (sourcingForm) {
+      return sourcingForm;
+    }
+
+    /*
+     * Last fallback.
+     */
+
+    return forms[0];
   }
 
+  /* ============================================================
+     MAIN INITIALIZATION
+     ============================================================ */
 
-  /* ---------------------------------------------------------
-     RENDER SUPPLIER
-     --------------------------------------------------------- */
+  function initializeCASEVO() {
+    const form = findSourcingForm();
 
-  function renderSupplier(supplier, index) {
-    const name =
-      supplierName(supplier);
+    if (!form) {
+      console.warn(
+        "CASEVO: sourcing form was not found."
+      );
+      return;
+    }
 
-    const description =
-      supplierDescription(supplier);
+    console.log(
+      "CASEVO: sourcing form detected.",
+      form
+    );
 
-    const location =
-      supplierLocation(supplier);
+    /* ----------------------------------------------------------
+       Locate fields
+       ---------------------------------------------------------- */
 
-    const url =
-      supplierUrl(supplier);
+    const requirementField = findTextarea(form);
 
-    const score =
-      supplier.score ||
-      supplier.matchScore ||
-      supplier.match_score ||
-      null;
+    const productField = findInput(
+      form,
+      [
+        "#product",
+        "#product-material",
+        "#productMaterial",
+        "#material",
+        "input[name='product']",
+        "input[name='material']",
+        "input[name='product_material']",
+        "input[name='productMaterial']"
+      ],
+      "product / material"
+    );
 
-    const safeUrl =
-      /^https?:\/\//i.test(url)
-        ? url
-        : "";
+    const quantityField = findInput(
+      form,
+      [
+        "#quantity",
+        "input[name='quantity']"
+      ],
+      "quantity"
+    );
 
-    return `
-      <article
-        class="casevo-supplier-card"
-        style="
-          border-top:1px solid #d7cec0;
-          padding:24px 0;
-        "
-      >
+    const targetPriceField = findInput(
+      form,
+      [
+        "#target-price",
+        "#targetPrice",
+        "#price",
+        "input[name='target_price']",
+        "input[name='targetPrice']",
+        "input[name='price']"
+      ],
+      "target price"
+    );
 
+    const destinationField = findInput(
+      form,
+      [
+        "#destination",
+        "input[name='destination']"
+      ],
+      "destination"
+    );
+
+    console.log("CASEVO fields:", {
+      requirement: requirementField,
+      product: productField,
+      quantity: quantityField,
+      targetPrice: targetPriceField,
+      destination: destinationField
+    });
+
+    /* ----------------------------------------------------------
+       Find button
+       ---------------------------------------------------------- */
+
+    let submitButton = firstExisting(
+      [
+        "#analyze-button",
+        "#analyzeButton",
+        "#find-matches",
+        "#findMatches",
+        "#analyze",
+        "button[type='submit']",
+        "input[type='submit']"
+      ],
+      form
+    );
+
+    if (!submitButton) {
+      submitButton = qsa(
+        "button",
+        form
+      ).find(function (button) {
+        return /analy|match|source|find/i.test(
+          button.textContent || ""
+        );
+      });
+    }
+
+    if (!submitButton) {
+      console.warn(
+        "CASEVO: analyze button was not found."
+      );
+    }
+
+    /* ==========================================================
+       RESULT CONTAINER
+       ========================================================== */
+
+    let resultContainer = qs(
+      "#casevo-results"
+    );
+
+    if (!resultContainer) {
+      resultContainer =
+        document.createElement("div");
+
+      resultContainer.id =
+        "casevo-results";
+
+      resultContainer.style.cssText = `
+        width: 100%;
+        box-sizing: border-box;
+        margin-top: 32px;
+      `;
+
+      form.insertAdjacentElement(
+        "afterend",
+        resultContainer
+      );
+    }
+
+    /* ==========================================================
+       LOADING STATE
+       ========================================================== */
+
+    function setLoading(isLoading) {
+      if (!submitButton) {
+        return;
+      }
+
+      if (isLoading) {
+        if (
+          !submitButton.dataset.originalText
+        ) {
+          submitButton.dataset.originalText =
+            submitButton.textContent ||
+            "Analyze & Find Matches";
+        }
+
+        submitButton.disabled = true;
+        submitButton.style.opacity = "0.65";
+        submitButton.style.cursor = "wait";
+
+        submitButton.textContent =
+          "Analyzing...";
+      } else {
+        submitButton.disabled = false;
+        submitButton.style.opacity = "";
+        submitButton.style.cursor = "";
+
+        submitButton.textContent =
+          submitButton.dataset.originalText ||
+          "Analyze & Find Matches";
+      }
+    }
+
+    /* ==========================================================
+       BUILD REQUIREMENT
+       ========================================================== */
+
+    function buildRequirement(
+      rawRequirement,
+      product,
+      quantity,
+      targetPrice,
+      destination
+    ) {
+      const requirement =
+        clean(rawRequirement);
+
+      /*
+       * PRIMARY:
+       * Always preserve the actual textarea.
+       */
+
+      if (requirement) {
+        return requirement;
+      }
+
+      /*
+       * FALLBACK:
+       * If textarea is empty, construct a sourcing
+       * requirement from the other fields.
+       */
+
+      const parts = [];
+
+      if (product) {
+        parts.push(
+          `Product / material: ${product}`
+        );
+      }
+
+      if (quantity) {
+        parts.push(
+          `Quantity: ${quantity}`
+        );
+      }
+
+      if (targetPrice) {
+        parts.push(
+          `Target price: ${targetPrice}`
+        );
+      }
+
+      if (destination) {
+        parts.push(
+          `Destination: ${destination}`
+        );
+      }
+
+      return clean(parts.join(". "));
+    }
+
+    /* ==========================================================
+       COLLECT FORM DATA
+       ========================================================== */
+
+    function collectFormData() {
+      const rawRequirement =
+        requirementField
+          ? requirementField.value
+          : "";
+
+      const product =
+        productField
+          ? productField.value
+          : "";
+
+      const quantity =
+        quantityField
+          ? quantityField.value
+          : "";
+
+      const targetPrice =
+        targetPriceField
+          ? targetPriceField.value
+          : "";
+
+      const destination =
+        destinationField
+          ? destinationField.value
+          : "";
+
+      const cleanRequirement =
+        clean(rawRequirement);
+
+      const cleanProduct =
+        clean(product);
+
+      const cleanQuantity =
+        clean(quantity);
+
+      const cleanTargetPrice =
+        clean(targetPrice);
+
+      const cleanDestination =
+        clean(destination);
+
+      /*
+       * IMPORTANT:
+       * This guarantees that requirement is NEVER
+       * accidentally sent as an empty string when
+       * the form contains useful information.
+       */
+
+      const finalRequirement =
+        buildRequirement(
+          cleanRequirement,
+          cleanProduct,
+          cleanQuantity,
+          cleanTargetPrice,
+          cleanDestination
+        );
+
+      return {
+        requirement: finalRequirement,
+        product: cleanProduct,
+        quantity: cleanQuantity,
+        targetPrice: cleanTargetPrice,
+        destination: cleanDestination
+      };
+    }
+
+    /* ==========================================================
+       ERROR RENDERING
+       ========================================================== */
+
+    function renderError(message) {
+      const safeMessage =
+        escapeHtml(
+          message ||
+          "Unable to complete supplier discovery."
+        );
+
+      const requestId =
+        "CASEVO-" +
+        Math.random()
+          .toString(36)
+          .substring(2, 10)
+          .toUpperCase();
+
+      resultContainer.innerHTML = `
         <div style="
-          display:flex;
-          justify-content:space-between;
-          gap:20px;
-          align-items:flex-start;
+          border:1px solid #d84a3a;
+          background:#fffaf7;
+          padding:24px;
+          box-sizing:border-box;
+          color:#8f2f24;
+          font-family:Arial,sans-serif;
         ">
 
-          <div>
+          <div style="
+            font-size:10px;
+            letter-spacing:2px;
+            text-transform:uppercase;
+            margin-bottom:10px;
+          ">
+            CASEVO AI / ERROR
+          </div>
 
-            <div style="
-              font-size:10px;
-              letter-spacing:.15em;
-              text-transform:uppercase;
-              color:#b52c23;
-              margin-bottom:8px;
-            ">
-              Supplier ${index + 1}
+          <div style="
+            font-family:Georgia,serif;
+            font-size:25px;
+            line-height:1.15;
+            color:#171513;
+            margin-bottom:10px;
+          ">
+            Supplier discovery could not be completed.
+          </div>
+
+          <div style="
+            font-size:14px;
+            line-height:1.6;
+          ">
+            ${safeMessage}
+          </div>
+
+          <div style="
+            margin-top:18px;
+            font-size:10px;
+            color:#8a8178;
+          ">
+            Request ID: ${requestId}
+          </div>
+
+        </div>
+      `;
+
+      resultContainer.scrollIntoView({
+        behavior: "smooth",
+        block: "start"
+      });
+    }
+
+    /* ==========================================================
+       INFO CARD
+       ========================================================== */
+
+    function infoCard(label, value) {
+      return `
+        <div style="
+          background:#fffaf3;
+          padding:18px;
+          box-sizing:border-box;
+        ">
+
+          <div style="
+            font-size:9px;
+            letter-spacing:1.5px;
+            color:#81786e;
+            margin-bottom:8px;
+          ">
+            ${escapeHtml(label)}
+          </div>
+
+          <div style="
+            font-size:14px;
+            line-height:1.5;
+          ">
+            ${escapeHtml(
+              value || "Not specified"
+            )}
+          </div>
+
+        </div>
+      `;
+    }
+
+    /* ==========================================================
+       SUPPLIER MATCH CARD
+       ========================================================== */
+
+    function supplierCard(match, index) {
+      const name =
+        match.name ||
+        match.company ||
+        match.supplier ||
+        `Supplier ${index + 1}`;
+
+      const location =
+        match.location ||
+        match.country ||
+        "China";
+
+      const score =
+        match.matchScore ??
+        match.score ??
+        match.match_score ??
+        "—";
+
+      const note =
+        match.note ||
+        match.description ||
+        match.reason ||
+        "";
+
+      const website =
+        match.website ||
+        match.url ||
+        "";
+
+      return `
+        <div style="
+          background:#fffaf3;
+          border:1px solid #ddd2c2;
+          padding:20px;
+          margin-bottom:12px;
+          box-sizing:border-box;
+        ">
+
+          <div style="
+            display:flex;
+            justify-content:space-between;
+            align-items:flex-start;
+            gap:20px;
+            flex-wrap:wrap;
+          ">
+
+            <div>
+
+              <div style="
+                font-size:17px;
+                font-weight:600;
+                color:#171513;
+              ">
+                ${escapeHtml(name)}
+              </div>
+
+              <div style="
+                margin-top:5px;
+                font-size:13px;
+                color:#746d64;
+              ">
+                ${escapeHtml(location)}
+              </div>
+
             </div>
 
-            <h3 style="
-              margin:0 0 8px;
-              font-family:Georgia,serif;
-              font-size:25px;
+            <div style="
+              font-size:18px;
+              font-weight:600;
             ">
-              ${escapeHtml(name)}
-            </h3>
-
-            ${
-              location
-                ? `
-                  <div style="
-                    font-size:13px;
-                    margin-bottom:10px;
-                    opacity:.7;
-                  ">
-                    ${escapeHtml(location)}
-                  </div>
-                `
-                : ""
-            }
+              ${escapeHtml(score)}%
+            </div>
 
           </div>
 
           ${
-            score !== null &&
-            score !== undefined
+            note
               ? `
                 <div style="
-                  min-width:80px;
-                  text-align:right;
+                  margin-top:14px;
+                  color:#625c55;
+                  font-size:13px;
+                  line-height:1.6;
                 ">
-                  <div style="
-                    font-size:10px;
-                    letter-spacing:.12em;
-                    text-transform:uppercase;
-                    opacity:.55;
-                  ">
-                    Match
-                  </div>
+                  ${escapeHtml(note)}
+                </div>
+              `
+              : ""
+          }
 
-                  <strong style="
-                    font-size:20px;
-                  ">
-                    ${escapeHtml(score)}%
-                  </strong>
+          ${
+            website
+              ? `
+                <div style="
+                  margin-top:12px;
+                ">
+                  <a
+                    href="${escapeHtml(website)}"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    style="
+                      color:#a92f25;
+                      font-size:12px;
+                    "
+                  >
+                    View supplier source →
+                  </a>
                 </div>
               `
               : ""
           }
 
         </div>
-
-        ${
-          description
-            ? `
-              <p style="
-                margin:12px 0;
-                line-height:1.65;
-                font-size:14px;
-              ">
-                ${escapeHtml(description)}
-              </p>
-            `
-            : ""
-        }
-
-        ${
-          safeUrl
-            ? `
-              <a
-                href="${escapeHtml(safeUrl)}"
-                target="_blank"
-                rel="noopener noreferrer"
-                style="
-                  display:inline-block;
-                  margin-top:8px;
-                  color:#b52c23;
-                  text-decoration:none;
-                  font-size:13px;
-                "
-              >
-                View public supplier source →
-              </a>
-            `
-            : ""
-        }
-
-      </article>
-    `;
-  }
-
-
-  /* ---------------------------------------------------------
-     RENDER NO MATCHES
-     --------------------------------------------------------- */
-
-  function renderNoMatches(data, request) {
-    const container =
-      ensureResultContainer();
-
-    if (!container) {
-      return;
+      `;
     }
 
-    const requestId =
-      extractRequestId(
-        data,
-        generateRequestId()
-      );
+    /* ==========================================================
+       RENDER SUCCESS RESULT
+       ========================================================== */
 
-    container.innerHTML = `
-      <section
-        style="
-          border:1px solid #d7cec0;
-          padding:28px;
-          background:#fbf7ef;
-        "
-      >
+    function renderResult(data) {
+      const brief =
+        data.brief || {};
+
+      const analysis =
+        data.analysis || {};
+
+      const normalized =
+        analysis.normalized || {};
+
+      const scoring =
+        analysis.scoring || {};
+
+      let matches =
+        analysis.matches ||
+        data.matches ||
+        [];
+
+      if (!Array.isArray(matches)) {
+        matches = [];
+      }
+
+      const requirements =
+        Array.isArray(
+          normalized.requirements
+        )
+          ? normalized.requirements
+          : [];
+
+      const tags =
+        Array.isArray(normalized.tags)
+          ? normalized.tags
+          : [];
+
+      const product =
+        normalized.product ||
+        brief.product ||
+        "Sourcing Requirement";
+
+      const quantity =
+        normalized.quantity ||
+        brief.quantity ||
+        "Not specified";
+
+      const targetPrice =
+        normalized.targetPrice ||
+        brief.targetPrice ||
+        "Not specified";
+
+      const destination =
+        normalized.destination ||
+        brief.destination ||
+        "Not specified";
+
+      const score =
+        scoring.score ??
+        data.score ??
+        "—";
+
+      const clarity =
+        scoring.clarity ??
+        "—";
+
+      const specification =
+        scoring.specification ??
+        scoring.specificationQuality ??
+        "—";
+
+      const commercial =
+        scoring.commercial ??
+        scoring.commercialReadiness ??
+        "—";
+
+      const note =
+        scoring.note ||
+        "";
+
+      resultContainer.innerHTML = `
 
         <div style="
-          font-size:10px;
-          letter-spacing:.18em;
-          text-transform:uppercase;
-          color:#b52c23;
-          margin-bottom:12px;
+          background:#f7f1e6;
+          border:1px solid #ded3c2;
+          padding:32px;
+          box-sizing:border-box;
+          font-family:Arial,sans-serif;
+          color:#1d1b18;
         ">
-          CASEVO AI / SOURCING ANALYSIS
-        </div>
 
-        <h2 style="
-          margin:0 0 10px;
-          font-family:Georgia,serif;
-          font-size:30px;
-        ">
-          Real supplier discovery completed.
-        </h2>
-
-        <p style="
-          margin:0 0 26px;
-          line-height:1.6;
-          opacity:.7;
-        ">
-          CASEVO completed the public-web supplier
-          discovery process successfully.
-        </p>
-
-
-        <div style="
-          border:1px solid #d7cec0;
-          padding:20px;
-          margin-bottom:24px;
-        ">
+          <!-- HEADER -->
 
           <div style="
-            font-size:10px;
-            letter-spacing:.14em;
-            text-transform:uppercase;
-            color:#b52c23;
-            margin-bottom:14px;
-          ">
-            Sourcing requirement
-          </div>
-
-          <div style="
-            line-height:1.7;
-          ">
-            ${escapeHtml(
-              request.material ||
-              "Sourcing Requirement"
-            )}
-          </div>
-
-        </div>
-
-
-        <div style="
-          border-top:1px solid #d7cec0;
-          padding-top:22px;
-        ">
-
-          <div style="
-            font-size:10px;
-            letter-spacing:.15em;
-            text-transform:uppercase;
-            color:#b52c23;
-            margin-bottom:10px;
-          ">
-            Real supplier matches
-          </div>
-
-          <h3 style="
-            margin:0 0 16px;
-            font-family:Georgia,serif;
-            font-size:25px;
-          ">
-            No verified supplier matches were returned.
-          </h3>
-
-          <div style="
-            border:1px solid #d7cec0;
-            padding:20px;
-            line-height:1.65;
-            font-size:14px;
+            display:flex;
+            justify-content:space-between;
+            align-items:flex-start;
+            gap:24px;
+            flex-wrap:wrap;
+            margin-bottom:30px;
           ">
 
-            <strong>
-              No verified supplier records were returned.
-            </strong>
+            <div>
 
-            <p style="margin:12px 0;">
-              CASEVO completed the public-web sourcing
-              analysis, but no supplier identity was
-              returned for this request.
-            </p>
-
-            <p style="margin:0;">
-              Supplier identities, manufacturing capability,
-              certifications and commercial contacts should
-              be independently verified before placing an order.
-            </p>
-
-          </div>
-
-        </div>
-
-
-        <div style="
-          margin-top:24px;
-          padding-top:20px;
-          border-top:1px solid #d7cec0;
-          font-size:11px;
-          line-height:1.6;
-          opacity:.7;
-        ">
-
-          Verification notice: CASEVO public-web supplier
-          discovery identifies potential supplier capabilities
-          from public information. Company identity,
-          manufacturing capability, certifications, pricing,
-          MOQ, production capacity and contact information
-          should be independently verified before placing an order.
-
-        </div>
-
-
-        <div style="
-          margin-top:14px;
-          font-size:10px;
-          opacity:.55;
-        ">
-          Request ID: ${escapeHtml(requestId)}
-        </div>
-
-      </section>
-    `;
-
-    container.scrollIntoView({
-      behavior: "smooth",
-      block: "start"
-    });
-  }
-
-
-  /* ---------------------------------------------------------
-     RENDER RESULTS
-     --------------------------------------------------------- */
-
-  function renderResults(data, request) {
-    const container =
-      ensureResultContainer();
-
-    if (!container) {
-      return;
-    }
-
-    const suppliers =
-      extractSuppliers(data);
-
-    const score =
-      extractScore(data);
-
-    const requestId =
-      extractRequestId(
-        data,
-        generateRequestId()
-      );
-
-    if (!suppliers.length) {
-      renderNoMatches(
-        {
-          ...data,
-          requestId
-        },
-        request
-      );
-
-      return;
-    }
-
-    container.innerHTML = `
-      <section
-        style="
-          border:1px solid #d7cec0;
-          padding:28px;
-          background:#fbf7ef;
-        "
-      >
-
-        <div style="
-          font-size:10px;
-          letter-spacing:.18em;
-          text-transform:uppercase;
-          color:#b52c23;
-          margin-bottom:12px;
-        ">
-          CASEVO AI / SOURCING ANALYSIS
-        </div>
-
-        <h2 style="
-          margin:0 0 10px;
-          font-family:Georgia,serif;
-          font-size:30px;
-        ">
-          Real supplier discovery completed.
-        </h2>
-
-        <p style="
-          margin:0 0 24px;
-          line-height:1.6;
-          opacity:.7;
-        ">
-          CASEVO supplier discovery completed successfully.
-        </p>
-
-
-        ${
-          score !== null
-            ? `
               <div style="
-                border:1px solid #d7cec0;
-                display:inline-block;
-                padding:16px 22px;
-                margin-bottom:26px;
+                color:#b42f24;
+                font-size:10px;
+                letter-spacing:2px;
+                text-transform:uppercase;
+                margin-bottom:10px;
               ">
+                CASEVO AI / SOURCING ANALYSIS
+              </div>
 
-                <div style="
-                  font-size:9px;
-                  letter-spacing:.15em;
-                  text-transform:uppercase;
-                  opacity:.6;
-                  margin-bottom:6px;
-                ">
-                  CASEVO Score
-                </div>
+              <h2 style="
+                margin:0;
+                font-family:Georgia,serif;
+                font-size:32px;
+                line-height:1.15;
+                font-weight:500;
+                color:#171513;
+              ">
+                Real supplier
+                <br>
+                discovery completed.
+              </h2>
 
-                <strong style="
-                  font-size:24px;
-                ">
-                  ${escapeHtml(score)}
-                </strong>
+              <div style="
+                margin-top:12px;
+                color:#665f57;
+                font-size:13px;
+              ">
+                CASEVO supplier discovery completed successfully.
+              </div>
 
+            </div>
+
+            <!-- SCORE -->
+
+            <div style="
+              border:1px solid #cdbfae;
+              background:#fffaf3;
+              padding:16px 22px;
+              min-width:110px;
+              text-align:center;
+              box-sizing:border-box;
+            ">
+
+              <div style="
+                font-size:9px;
+                letter-spacing:1.5px;
+                color:#81786e;
+                margin-bottom:8px;
+              ">
+                CASEVO SCORE
+              </div>
+
+              <div style="
+                font-size:28px;
+                font-weight:600;
+              ">
+                ${escapeHtml(score)}
                 <span style="
                   font-size:12px;
-                  opacity:.6;
+                  color:#777;
                 ">
                   /100
                 </span>
+              </div>
+
+            </div>
+
+          </div>
+
+
+          <!-- REQUIREMENT SUMMARY -->
+
+          <div style="
+            display:grid;
+            grid-template-columns:
+              repeat(auto-fit,minmax(180px,1fr));
+            gap:1px;
+            background:#d8cdbc;
+            margin-bottom:32px;
+          ">
+
+            ${infoCard(
+              "PRODUCT / MATERIAL",
+              product
+            )}
+
+            ${infoCard(
+              "QUANTITY",
+              quantity
+            )}
+
+            ${infoCard(
+              "TARGET PRICE",
+              targetPrice
+            )}
+
+            ${infoCard(
+              "DESTINATION",
+              destination
+            )}
+
+          </div>
+
+
+          <!-- TWO COLUMN ANALYSIS -->
+
+          <div style="
+            display:grid;
+            grid-template-columns:
+              minmax(0,1.4fr)
+              minmax(260px,.8fr);
+            gap:28px;
+          ">
+
+
+            <!-- NORMALIZED REQUIREMENTS -->
+
+            <div>
+
+              <div style="
+                color:#b42f24;
+                font-size:10px;
+                letter-spacing:2px;
+                text-transform:uppercase;
+                margin-bottom:10px;
+              ">
+                NORMALIZED REQUIREMENTS
+              </div>
+
+              <div style="
+                background:#fffaf3;
+                border:1px solid #ddd2c2;
+                padding:22px;
+                box-sizing:border-box;
+              ">
+
+                ${
+                  requirements.length
+                    ? requirements
+                        .map(
+                          function (
+                            item,
+                            index
+                          ) {
+                            return `
+                              <div style="
+                                display:flex;
+                                gap:12px;
+                                padding:10px 0;
+                                border-bottom:
+                                  1px solid #e7ded2;
+                              ">
+
+                                <span style="
+                                  color:#b42f24;
+                                  font-size:11px;
+                                  min-width:20px;
+                                ">
+                                  ${String(
+                                    index + 1
+                                  ).padStart(
+                                    2,
+                                    "0"
+                                  )}
+                                </span>
+
+                                <span style="
+                                  font-size:13px;
+                                  line-height:1.5;
+                                ">
+                                  ${escapeHtml(item)}
+                                </span>
+
+                              </div>
+                            `;
+                          }
+                        )
+                        .join("")
+                    : `
+                      <div style="
+                        color:#777;
+                        font-size:13px;
+                      ">
+                        The sourcing requirement was received successfully.
+                      </div>
+                    `
+                }
 
               </div>
-            `
-            : ""
+
+
+              ${
+                tags.length
+                  ? `
+                    <div style="
+                      display:flex;
+                      gap:8px;
+                      flex-wrap:wrap;
+                      margin-top:16px;
+                    ">
+
+                      ${tags
+                        .map(
+                          function (tag) {
+                            return `
+                              <span style="
+                                border:1px solid #cfc3b4;
+                                background:#fffaf4;
+                                padding:6px 10px;
+                                font-size:10px;
+                              ">
+                                ${escapeHtml(tag)}
+                              </span>
+                            `;
+                          }
+                        )
+                        .join("")}
+
+                    </div>
+                  `
+                  : ""
+              }
+
+            </div>
+
+
+            <!-- READINESS -->
+
+            <div>
+
+              <div style="
+                color:#b42f24;
+                font-size:10px;
+                letter-spacing:2px;
+                text-transform:uppercase;
+                margin-bottom:10px;
+              ">
+                SOURCING READINESS
+              </div>
+
+              <div style="
+                background:#211f1c;
+                color:white;
+                padding:24px;
+                box-sizing:border-box;
+              ">
+
+                <div style="
+                  display:flex;
+                  justify-content:space-between;
+                  gap:20px;
+                  padding-bottom:16px;
+                  margin-bottom:16px;
+                  border-bottom:
+                    1px solid #46423e;
+                ">
+                  <span>
+                    Requirement clarity
+                  </span>
+
+                  <strong>
+                    ${escapeHtml(clarity)}
+                  </strong>
+                </div>
+
+
+                <div style="
+                  display:flex;
+                  justify-content:space-between;
+                  gap:20px;
+                  padding-bottom:16px;
+                  margin-bottom:16px;
+                  border-bottom:
+                    1px solid #46423e;
+                ">
+                  <span>
+                    Specification quality
+                  </span>
+
+                  <strong>
+                    ${escapeHtml(
+                      specification
+                    )}
+                  </strong>
+                </div>
+
+
+                <div style="
+                  display:flex;
+                  justify-content:space-between;
+                  gap:20px;
+                ">
+                  <span>
+                    Commercial readiness
+                  </span>
+
+                  <strong>
+                    ${escapeHtml(commercial)}
+                  </strong>
+                </div>
+
+              </div>
+
+
+              ${
+                note
+                  ? `
+                    <div style="
+                      margin-top:14px;
+                      color:#665f57;
+                      font-size:12px;
+                      line-height:1.6;
+                    ">
+                      ${escapeHtml(note)}
+                    </div>
+                  `
+                  : ""
+              }
+
+            </div>
+
+          </div>
+
+
+          <!-- SUPPLIER MATCHES -->
+
+          <div style="
+            margin-top:36px;
+            padding-top:28px;
+            border-top:1px solid #d8cdbc;
+          ">
+
+            <div style="
+              color:#b42f24;
+              font-size:10px;
+              letter-spacing:2px;
+              text-transform:uppercase;
+              margin-bottom:10px;
+            ">
+              REAL SUPPLIER MATCHES
+            </div>
+
+
+            ${
+              matches.length
+                ? `
+
+                  <h3 style="
+                    margin:0 0 18px 0;
+                    font-family:Georgia,serif;
+                    font-size:26px;
+                    font-weight:500;
+                  ">
+                    Supplier matches
+                    returned from
+                    public-web discovery.
+                  </h3>
+
+                  ${matches
+                    .map(
+                      supplierCard
+                    )
+                    .join("")}
+
+                `
+                : `
+
+                  <h3 style="
+                    margin:0 0 18px 0;
+                    font-family:Georgia,serif;
+                    font-size:26px;
+                    font-weight:500;
+                  ">
+                    No verified supplier
+                    matches were returned.
+                  </h3>
+
+                  <div style="
+                    background:#fffaf3;
+                    border:1px solid #ddd2c2;
+                    padding:22px;
+                    color:#625c55;
+                    font-size:13px;
+                    line-height:1.7;
+                    box-sizing:border-box;
+                  ">
+
+                    <strong style="
+                      color:#171513;
+                    ">
+                      No verified supplier records were returned.
+                    </strong>
+
+                    <p style="
+                      margin:12px 0 0 0;
+                    ">
+                      CASEVO completed the
+                      public-web sourcing analysis,
+                      but no verified supplier identity
+                      was returned for this request.
+                    </p>
+
+                    <p style="
+                      margin:12px 0 0 0;
+                    ">
+                      Supplier identities,
+                      manufacturing capability,
+                      certifications and commercial
+                      contacts should be independently
+                      verified before placing an order.
+                    </p>
+
+                  </div>
+
+                `
+            }
+
+          </div>
+
+
+          <!-- VERIFICATION NOTICE -->
+
+          <div style="
+            margin-top:28px;
+            padding-top:22px;
+            border-top:1px solid #d8cdbc;
+            font-size:11px;
+            line-height:1.65;
+            color:#81786e;
+          ">
+
+            Verification notice:
+            CASEVO public-web supplier discovery
+            identifies potential supplier capabilities
+            from publicly available information.
+            Company identity, manufacturing capability,
+            certifications, MOQ, production capacity
+            and contact information should be
+            independently verified before placing an order.
+
+          </div>
+
+        </div>
+      `;
+
+      resultContainer.scrollIntoView({
+        behavior: "smooth",
+        block: "start"
+      });
+    }
+
+    /* ==========================================================
+       SUBMIT REQUEST
+       ========================================================== */
+
+    async function submitSourcingRequest(event) {
+      if (event) {
+        event.preventDefault();
+        event.stopPropagation();
+      }
+
+      const formData =
+        collectFormData();
+
+      console.log(
+        "CASEVO form data:",
+        formData
+      );
+
+      /*
+       * CRITICAL VALIDATION
+       *
+       * Do NOT only check product.
+       * The Worker expects requirement.
+       */
+
+      if (!formData.requirement) {
+        renderError(
+          "Please describe what you want to source before running the analysis."
+        );
+
+        if (requirementField) {
+          requirementField.focus();
         }
 
+        return;
+      }
 
+      /*
+       * Show loading
+       */
+
+      setLoading(true);
+
+      resultContainer.innerHTML = `
         <div style="
-          border-top:1px solid #d7cec0;
-          padding-top:22px;
+          background:#f7f1e6;
+          border:1px solid #ded3c2;
+          padding:36px;
+          text-align:center;
+          box-sizing:border-box;
+          font-family:Arial,sans-serif;
         ">
 
           <div style="
+            color:#b42f24;
             font-size:10px;
-            letter-spacing:.15em;
+            letter-spacing:2px;
             text-transform:uppercase;
-            color:#b52c23;
-            margin-bottom:10px;
+            margin-bottom:12px;
           ">
-            Real supplier matches
+            CASEVO AI
           </div>
 
-          <h3 style="
-            margin:0 0 18px;
+          <div style="
             font-family:Georgia,serif;
             font-size:26px;
+            line-height:1.2;
           ">
-            ${suppliers.length}
-            supplier${suppliers.length === 1 ? "" : "s"}
-            found.
-          </h3>
+            Searching real suppliers...
+          </div>
 
-          <div>
-            ${suppliers
-              .map(renderSupplier)
-              .join("")}
+          <div style="
+            margin-top:10px;
+            color:#777;
+            font-size:12px;
+          ">
+            CASEVO is analyzing the sourcing requirement
+            and searching public supplier information.
           </div>
 
         </div>
+      `;
 
+      resultContainer.scrollIntoView({
+        behavior: "smooth",
+        block: "start"
+      });
 
-        <div style="
-          margin-top:24px;
-          padding-top:20px;
-          border-top:1px solid #d7cec0;
-          font-size:11px;
-          line-height:1.6;
-          opacity:.7;
-        ">
-          Verification notice: Public-web supplier matches
-          are discovery results, not commercial verification.
-          Company identity, manufacturing capability,
-          certifications, pricing, MOQ, production capacity
-          and contact information should be independently
-          verified before placing an order.
-        </div>
-
-
-        <div style="
-          margin-top:14px;
-          font-size:10px;
-          opacity:.55;
-        ">
-          Request ID: ${escapeHtml(requestId)}
-        </div>
-
-      </section>
-    `;
-
-    container.scrollIntoView({
-      behavior: "smooth",
-      block: "start"
-    });
-  }
-
-
-  /* ---------------------------------------------------------
-     SUBMIT SOURCING
-     --------------------------------------------------------- */
-
-  async function submitSourcing(event) {
-    if (event) {
-      event.preventDefault();
-      event.stopPropagation();
-    }
-
-    clearError();
-
-    /*
-      First extract missing fields from
-      the main sourcing description.
-    */
-
-    populateStructuredFields();
-
-    const request =
-      buildSourcingRequest();
-
-    const requestId =
-      generateRequestId();
-
-    const validationErrors =
-      validateRequest(request);
-
-    if (validationErrors.length) {
-      showError(
-        validationErrors.join(" "),
-        requestId
-      );
-
-      return;
-    }
-
-    setLoading(true);
-
-    showLoadingResult();
-
-    /*
-      This payload intentionally includes
-      multiple compatible field names.
-
-      That makes the front end compatible
-      with the current CASEVO worker.
-    */
-
-    const payload = {
-      requestId,
-
-      request: request.request,
-
-      description: request.description,
-
-      product: request.product,
-
-      material: request.material,
-
-      quantity: request.quantity,
-
-      target_price:
-        request.target_price,
-
-      targetPrice:
-        request.targetPrice,
-
-      destination:
-        request.destination,
-
-      shipping_destination:
-        request.destination,
-
-      shippingDestination:
-        request.destination
-    };
-
-
-    try {
-      const result =
-        await callSourcingAPI(payload);
-
-      renderResults(
-        result,
-        request
-      );
-
-    } catch (error) {
-      console.error(
-        "CASEVO sourcing error:",
-        error
-      );
-
-      let message =
-        error &&
-        error.name === "AbortError"
-          ? "The supplier search timed out. Please try again."
-          : (
-              error &&
-              error.message
-            ) ||
-            "The supplier search could not be completed.";
-
-      showError(
-        message,
-        requestId
-      );
-
-    } finally {
-      setLoading(false);
-    }
-  }
-
-
-  /* ---------------------------------------------------------
-     INPUT AUTO-PARSING
-     --------------------------------------------------------- */
-
-  if (descriptionField) {
-    descriptionField.addEventListener(
-      "blur",
-      () => {
-        populateStructuredFields();
-      }
-    );
-
-    descriptionField.addEventListener(
-      "input",
-      () => {
+      try {
         /*
-          Do not continuously overwrite fields.
-          Only parse when structured fields are empty.
-        */
+         * IMPORTANT:
+         * Explicitly construct the JSON payload.
+         */
+
+        const payload = {
+          requirement: formData.requirement,
+          product: formData.product,
+          quantity: formData.quantity,
+          targetPrice: formData.targetPrice,
+          destination: formData.destination,
+          source: "CASEVO website",
+          timestamp:
+            new Date().toISOString()
+        };
+
+        console.log(
+          "CASEVO request payload:",
+          payload
+        );
+
+        /*
+         * Final safety check before fetch.
+         */
 
         if (
-          !materialField ||
-          !text(materialField.value)
+          !payload.requirement ||
+          !clean(payload.requirement)
         ) {
-          const material =
-            parseMaterial(
-              descriptionField.value
-            );
-
-          if (material && material.length < 120) {
-            if (materialField) {
-              materialField.value = material;
-            }
-          }
+          throw new Error(
+            "The sourcing requirement is empty."
+          );
         }
+
+        const response =
+          await fetch(API_ENDPOINT, {
+            method: "POST",
+
+            headers: {
+              "Content-Type":
+                "application/json",
+              "Accept":
+                "application/json"
+            },
+
+            body:
+              JSON.stringify(payload)
+          });
+
+        /*
+         * Read response as text first.
+         * This prevents JSON parsing errors when
+         * Cloudflare returns a plain-text error.
+         */
+
+        const rawText =
+          await response.text();
+
+        console.log(
+          "CASEVO raw response:",
+          rawText
+        );
+
+        let data;
+
+        try {
+          data =
+            JSON.parse(rawText);
+        } catch (parseError) {
+          throw new Error(
+            "CASEVO server returned an invalid response."
+          );
+        }
+
+        console.log(
+          "CASEVO parsed response:",
+          data
+        );
+
+        /*
+         * Worker error
+         */
 
         if (
-          !quantityField ||
-          !text(quantityField.value)
+          !response.ok ||
+          data.ok === false
         ) {
-          const quantity =
-            parseQuantity(
-              descriptionField.value
-            );
-
-          if (quantity && quantityField) {
-            quantityField.value = quantity;
-          }
+          throw new Error(
+            data.error ||
+            data.message ||
+            "Supplier discovery failed."
+          );
         }
 
-        if (
-          !destinationField ||
-          !text(destinationField.value)
-        ) {
-          const destination =
-            parseDestination(
-              descriptionField.value
-            );
+        /*
+         * SUCCESS
+         */
 
-          if (
-            destination &&
-            destinationField
-          ) {
-            destinationField.value =
-              destination;
-          }
-        }
+        renderResult(data);
+
+      } catch (error) {
+        console.error(
+          "CASEVO sourcing error:",
+          error
+        );
+
+        renderError(
+          error &&
+          error.message
+            ? error.message
+            : "Unable to connect to CASEVO sourcing service."
+        );
+
+      } finally {
+        setLoading(false);
       }
-    );
-  }
+    }
 
+    /* ==========================================================
+       FORM EVENT
+       ========================================================== */
 
-  /* ---------------------------------------------------------
-     FORM HANDLING
-     --------------------------------------------------------- */
-
-  const form =
-    qs([
-      "#sourcing-form",
-      "#ai-sourcing-form",
-      "form"
-    ]);
-
-  if (form) {
     form.addEventListener(
       "submit",
-      submitSourcing
+      submitSourcingRequest
     );
-  }
 
-
-  if (submitButton) {
-    submitButton.addEventListener(
-      "click",
-      submitSourcing
-    );
-  }
-
-
-  /* ---------------------------------------------------------
-     INITIAL DEFAULT DATA
-     --------------------------------------------------------- */
-
-  function initializeDefaults() {
     /*
-      Do not force defaults into the user's form.
-      Only use the demo request when the textarea
-      is already present and completely empty.
-    */
+     * IMPORTANT:
+     *
+     * We intentionally DO NOT call
+     * form.submit() from the button click.
+     *
+     * Native form submit handles the request.
+     */
 
-    if (
-      descriptionField &&
-      !text(descriptionField.value)
-    ) {
-      /*
-        Keep production site clean:
-        no automatic demo request.
-      */
-
-      return;
+    if (submitButton) {
+      submitButton.addEventListener(
+        "click",
+        function () {
+          /*
+           * Intentionally empty.
+           *
+           * The form's submit event is the
+           * single source of truth.
+           */
+        }
+      );
     }
 
-    populateStructuredFields();
+    /* ==========================================================
+       PUBLIC CASEVO API
+       ========================================================== */
+
+    window.CASEVO =
+      window.CASEVO || {};
+
+    window.CASEVO.analyze =
+      function (request) {
+        if (
+          !request ||
+          typeof request !== "object"
+        ) {
+          return Promise.reject(
+            new Error(
+              "Invalid CASEVO sourcing request."
+            )
+          );
+        }
+
+        const requirement =
+          clean(
+            request.requirement
+          );
+
+        const product =
+          clean(
+            request.product
+          );
+
+        const quantity =
+          clean(
+            request.quantity
+          );
+
+        const targetPrice =
+          clean(
+            request.targetPrice
+          );
+
+        const destination =
+          clean(
+            request.destination
+          );
+
+        /*
+         * Build requirement if caller
+         * only supplied structured fields.
+         */
+
+        const finalRequirement =
+          buildRequirement(
+            requirement,
+            product,
+            quantity,
+            targetPrice,
+            destination
+          );
+
+        if (!finalRequirement) {
+          return Promise.reject(
+            new Error(
+              "Please provide a sourcing requirement."
+            )
+          );
+        }
+
+        return fetch(
+          API_ENDPOINT,
+          {
+            method: "POST",
+
+            headers: {
+              "Content-Type":
+                "application/json",
+              "Accept":
+                "application/json"
+            },
+
+            body: JSON.stringify({
+              requirement:
+                finalRequirement,
+
+              product:
+                product,
+
+              quantity:
+                quantity,
+
+              targetPrice:
+                targetPrice,
+
+              destination:
+                destination,
+
+              source:
+                "CASEVO website",
+
+              timestamp:
+                new Date().toISOString()
+            })
+          }
+        ).then(
+          async function (response) {
+            const rawText =
+              await response.text();
+
+            let data;
+
+            try {
+              data =
+                JSON.parse(rawText);
+            } catch (error) {
+              throw new Error(
+                "CASEVO server returned an invalid response."
+              );
+            }
+
+            if (
+              !response.ok ||
+              data.ok === false
+            ) {
+              throw new Error(
+                data.error ||
+                data.message ||
+                "CASEVO API request failed."
+              );
+            }
+
+            return data;
+          }
+        );
+      };
+
+    console.log(
+      "CASEVO AI Sourcing frontend initialized successfully."
+    );
+
+    console.log(
+      "CASEVO requirement field:",
+      requirementField
+    );
+
+    console.log(
+      "CASEVO product field:",
+      productField
+    );
+
+    console.log(
+      "CASEVO quantity field:",
+      quantityField
+    );
+
+    console.log(
+      "CASEVO target price field:",
+      targetPriceField
+    );
+
+    console.log(
+      "CASEVO destination field:",
+      destinationField
+    );
   }
 
-
-  /* ---------------------------------------------------------
-     HANDLE PAGE LOAD
-     --------------------------------------------------------- */
+  /* ============================================================
+     DOM READY
+     ============================================================ */
 
   if (
-    document.readyState === "loading"
+    document.readyState ===
+    "loading"
   ) {
     document.addEventListener(
       "DOMContentLoaded",
-      initializeDefaults
+      initializeCASEVO
     );
   } else {
-    initializeDefaults();
+    initializeCASEVO();
   }
-
-
-  /* ---------------------------------------------------------
-     PUBLIC DEBUG API
-     --------------------------------------------------------- */
-
-  window.CASEVO = {
-    version: "3.0.0-final",
-
-    parseMaterial,
-
-    parseQuantity,
-
-    parseTargetPrice,
-
-    parseDestination,
-
-    buildSourcingRequest,
-
-    submitSourcing
-  };
 
 })();
