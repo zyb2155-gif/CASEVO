@@ -1,59 +1,35 @@
 /**
- * ============================================================
- * CASEVO AI SOURCING — CLEAN WORKER
- * ============================================================
- *
+ * CASEVO AI SOURCING ENGINE
  * Cloudflare Worker
  *
- * GET  /api/health
  * POST /api/sourcing
+ * GET  /api/health
  *
- * Environment:
+ * Required secret:
  *   TAVILY_API_KEY
  *
- * Design goals:
- *   1. Real public-web discovery only.
- *   2. Never invent supplier identities.
- *   3. Prefer official company / factory websites.
- *   4. Reject obvious directories, marketplaces and articles.
- *   5. Keep returned evidence short and frontend-safe.
- *   6. Remain compatible with CASEVO script.js.
- * ============================================================
+ * Frontend-compatible response:
+ *   data.brief
+ *   data.analysis.normalized
+ *   data.analysis.scoring
+ *   data.analysis.matches
+ *
+ * Also returns top-level `matches` for backward compatibility.
  */
 
-const VERSION = "5.1.0";
-
-const TAVILY_ENDPOINT = "https://api.tavily.com/search";
-
-const MAX_SEARCH_RESULTS_PER_QUERY = 8;
-const MAX_SUPPLIERS_RETURNED = 8;
-
-const MAX_TEXT = 5000;
-const MAX_EVIDENCE = 420;
-
-const TAVILY_TIMEOUT_MS = 15000;
-
-
-/* ============================================================
-   EXCLUDED DOMAINS
-   ============================================================ */
+const VERSION = "4.0.0";
 
 const EXCLUDED_DOMAINS = [
-
-  // Social
   "facebook.com",
   "instagram.com",
   "linkedin.com",
   "youtube.com",
   "pinterest.com",
   "reddit.com",
-  "tiktok.com",
-  "twitter.com",
-  "x.com",
 
-  // Marketplaces
   "amazon.com",
   "ebay.com",
+
   "alibaba.com",
   "aliexpress.com",
   "made-in-china.com",
@@ -61,7 +37,6 @@ const EXCLUDED_DOMAINS = [
   "indiamart.com",
   "tradeindia.com",
 
-  // Directories
   "justdial.com",
   "yellowpages.com",
   "yelp.com",
@@ -69,529 +44,164 @@ const EXCLUDED_DOMAINS = [
   "kompass.com",
   "europages.com",
 
-  // General content
   "wikipedia.org",
-  "quora.com",
-  "medium.com",
-  "substack.com",
-  "wordpress.com",
-  "blogspot.com",
-  "craigslist.org"
-
+  "picclick.com"
 ];
 
-
-const EXCLUDED_TLDS = [
-  ".gov",
-  ".edu"
-];
-
-
-/* ============================================================
-   LOW VALUE ARTICLE TERMS
-   ============================================================ */
-
-const ARTICLE_TERMS = [
-
-  "top 5",
+const LOW_VALUE_TERMS = [
   "top 10",
   "top 20",
   "top 50",
+  "top 5",
 
-  "best suppliers",
   "best manufacturers",
+  "best suppliers",
   "best factories",
 
-  "top suppliers",
-  "top manufacturers",
-  "top factories",
+  "supplier directory",
+  "supplier directories",
+  "directory",
+  "directories",
+
+  "marketplace",
 
   "list of suppliers",
   "list of manufacturers",
-  "supplier list",
-  "manufacturer list",
-  "factory list",
 
-  "directory",
-  "directories",
-  "marketplace",
-
-  "buyer guide",
-  "buyers guide",
   "buyer's guide",
-  "ultimate guide",
+  "buyers guide",
+
   "quick guide",
+  "ultimate guide",
 
   "how to",
   "what is",
-  "why choose",
-
-  "blog",
-  "blogs",
-  "article",
-  "articles",
-  "news",
-  "journal",
-  "magazine",
-  "press release",
+  "comparison",
 
   "review",
   "reviews",
 
-  "comparison",
-  "comparisons",
+  "blog",
+  "article",
+  "news",
+  "journal",
+  "magazine",
 
   "market report",
   "industry report",
-  "market analysis",
-  "industry analysis",
 
   "price list",
-  "catalog",
-  "catalogue"
-
+  "catalog"
 ];
 
-
-/* ============================================================
-   LOW VALUE URL PATHS
-   ============================================================ */
-
-const DIRECTORY_PATHS = [
-
-  "/directory",
-  "/directories",
-
-  "/listing",
-  "/listings",
-
-  "/category",
-  "/categories",
-
-  "/tag",
-  "/tags",
-
-  "/blog",
-  "/blogs",
-
-  "/news",
-
-  "/article",
-  "/articles",
-
-  "/magazine",
-  "/journal",
-
-  "/search",
-  "/results",
-
-  "/reviews",
-  "/review"
-
+const LOW_VALUE_PATHS = [
+  "/blog/",
+  "/blogs/",
+  "/news/",
+  "/article/",
+  "/articles/",
+  "/magazine/",
+  "/journal/",
+  "/category/",
+  "/tag/",
+  "/search/",
+  "/directory/",
+  "/directories/",
+  "/listing/",
+  "/listings/"
 ];
-
-
-/* ============================================================
-   MANUFACTURER SIGNALS
-   ============================================================ */
-
-const MANUFACTURER_SIGNALS = [
-
-  "manufacturer",
-  "manufacturing",
-  "factory",
-  "factories",
-
-  "production facility",
-  "manufacturing facility",
-
-  "manufacturing plant",
-  "production plant",
-
-  "production line",
-
-  "own factory",
-  "our factory",
-
-  "our manufacturing",
-  "our production",
-
-  "production capacity",
-
-  "factory direct",
-
-  "production facility"
-
-];
-
-
-/* ============================================================
-   COMMERCIAL SIGNALS
-   ============================================================ */
-
-const COMMERCIAL_SIGNALS = [
-
-  "oem",
-  "odm",
-  "private label",
-
-  "custom manufacturing",
-  "custom production",
-
-  "export",
-  "exporter",
-  "exporting",
-
-  "wholesale",
-  "b2b",
-
-  "custom made",
-  "custom-made"
-
-];
-
-
-/* ============================================================
-   COMPANY SIGNALS
-   ============================================================ */
-
-const COMPANY_SIGNALS = [
-
-  "about us",
-  "about our company",
-
-  "company profile",
-  "our company",
-
-  "our products",
-  "our factory",
-  "our facility",
-  "our production",
-
-  "contact us",
-  "contact",
-
-  "get in touch",
-
-  "established",
-
-  "founded"
-
-];
-
-
-/* ============================================================
-   CHINA SIGNALS
-   ============================================================ */
 
 const CHINA_SIGNALS = [
-
   "china",
   "chinese",
-
   "guangdong",
   "guangzhou",
   "dongguan",
   "foshan",
   "shenzhen",
-
   "zhejiang",
   "wenzhou",
   "yiwu",
-
   "fujian",
   "quanzhou",
   "jinjiang",
   "putian",
-
   "jiangsu",
   "sichuan",
-  "hebei"
+  "hebei",
+  "shoes",
+  "footwear"
+];
 
+const MANUFACTURER_SIGNALS = [
+  "manufacturer",
+  "manufacturing",
+  "factory",
+  "production",
+  "producer",
+  "production facility",
+  "manufacturing facility",
+  "manufacturing plant",
+  "factory direct",
+  "factory outlet"
+];
+
+const COMMERCIAL_SIGNALS = [
+  "oem",
+  "odm",
+  "exporter",
+  "export",
+  "wholesale",
+  "custom",
+  "b2b",
+  "private label",
+  "bulk",
+  "moq"
+];
+
+const COMPANY_SIGNALS = [
+  "contact us",
+  "contact",
+  "email",
+  "phone",
+  "address",
+  "company",
+  "about us",
+  "our factory",
+  "our production",
+  "our products",
+  "capabilities",
+  "factory"
 ];
 
 
-/* ============================================================
-   PRODUCT DETECTION
-   ============================================================ */
-
-const PRODUCT_TERMS = [
-
-  [
-    "premium full-grain leather shoe upper",
-    "Premium full-grain leather shoe upper"
-  ],
-
-  [
-    "full-grain leather shoe upper",
-    "Premium full-grain leather shoe upper"
-  ],
-
-  [
-    "full grain leather shoe upper",
-    "Premium full-grain leather shoe upper"
-  ],
-
-  [
-    "leather shoe upper",
-    "Leather shoe upper"
-  ],
-
-  [
-    "shoe upper leather",
-    "Leather shoe upper"
-  ],
-
-  [
-    "upper leather",
-    "Upper leather"
-  ],
-
-  [
-    "genuine leather",
-    "Genuine leather"
-  ],
-
-  [
-    "cow leather",
-    "Cow leather"
-  ],
-
-  [
-    "cowhide",
-    "Cowhide"
-  ],
-
-  [
-    "microfiber leather",
-    "Microfiber leather"
-  ],
-
-  [
-    "synthetic leather",
-    "Synthetic leather"
-  ],
-
-  [
-    "pu leather",
-    "PU leather"
-  ],
-
-  [
-    "rubber",
-    "Rubber"
-  ],
-
-  [
-    "eva",
-    "EVA"
-  ],
-
-  [
-    "tpr",
-    "TPR"
-  ],
-
-  [
-    "textile",
-    "Textile"
-  ],
-
-  [
-    "fabric",
-    "Fabric"
-  ],
-
-  [
-    "sneaker",
-    "Sneaker"
-  ],
-
-  [
-    "footwear",
-    "Footwear"
-  ],
-
-  [
-    "shoe",
-    "Shoe"
-  ],
-
-  [
-    "鞋面革",
-    "Upper leather"
-  ],
-
-  [
-    "皮革",
-    "Leather"
-  ],
-
-  [
-    "鞋面",
-    "Shoe upper"
-  ],
-
-  [
-    "鞋",
-    "Footwear"
-  ]
-
-];
-
-
-/* ============================================================
-   DESTINATION DETECTION
-   ============================================================ */
-
-const DESTINATIONS = [
-
-  ["united states", "United States"],
-  ["usa", "United States"],
-  ["u.s.a", "United States"],
-  ["america", "United States"],
-  ["美国", "United States"],
-
-  ["united kingdom", "United Kingdom"],
-  ["uk", "United Kingdom"],
-  ["英国", "United Kingdom"],
-
-  ["canada", "Canada"],
-  ["加拿大", "Canada"],
-
-  ["australia", "Australia"],
-  ["澳大利亚", "Australia"],
-
-  ["germany", "Germany"],
-  ["德国", "Germany"],
-
-  ["france", "France"],
-  ["法国", "France"],
-
-  ["italy", "Italy"],
-  ["意大利", "Italy"],
-
-  ["spain", "Spain"],
-  ["西班牙", "Spain"],
-
-  ["japan", "Japan"],
-  ["日本", "Japan"],
-
-  ["south korea", "South Korea"],
-  ["korea", "South Korea"],
-  ["韩国", "South Korea"],
-
-  ["singapore", "Singapore"],
-  ["新加坡", "Singapore"],
-
-  ["india", "India"],
-  ["印度", "India"],
-
-  ["vietnam", "Vietnam"],
-  ["越南", "Vietnam"],
-
-  ["indonesia", "Indonesia"],
-  ["印度尼西亚", "Indonesia"],
-
-  ["thailand", "Thailand"],
-  ["泰国", "Thailand"],
-
-  ["turkey", "Turkey"],
-  ["土耳其", "Turkey"],
-
-  ["mexico", "Mexico"],
-  ["墨西哥", "Mexico"],
-
-  ["brazil", "Brazil"],
-  ["巴西", "Brazil"]
-
-];
-
-
-/* ============================================================
-   LOCATION DATABASE
-   ============================================================ */
-
-const LOCATIONS = [
-
-  "Guangzhou, China",
-  "Dongguan, China",
-  "Foshan, China",
-  "Shenzhen, China",
-  "Wenzhou, China",
-  "Yiwu, China",
-  "Quanzhou, China",
-  "Jinjiang, China",
-  "Putian, China",
-
-  "Guangdong, China",
-  "Zhejiang, China",
-  "Fujian, China",
-  "Jiangsu, China",
-  "Sichuan, China",
-  "Hebei, China",
-
-  "United States",
-  "United Kingdom",
-  "South Korea",
-  "Saudi Arabia",
-
-  "China",
-  "India",
-  "Vietnam",
-  "Indonesia",
-  "Thailand",
-  "Bangladesh",
-  "Pakistan",
-  "Turkey",
-  "Italy",
-  "Spain",
-  "Portugal",
-  "Germany",
-  "Mexico",
-  "Brazil",
-  "Japan",
-  "Taiwan",
-  "Cambodia",
-  "Malaysia",
-  "Poland",
-  "Romania",
-  "France"
-
-];
-
-
-/* ============================================================
-   WORKER ENTRY
-   ============================================================ */
+/* =========================================================
+   MAIN WORKER
+   ========================================================= */
 
 export default {
-
   async fetch(request, env) {
 
     const url = new URL(request.url);
 
 
-    /* --------------------------------------------------------
-       CORS PREFLIGHT
-       -------------------------------------------------------- */
+    /* -------------------------------------------------------
+       CORS
+       ------------------------------------------------------- */
 
     if (request.method === "OPTIONS") {
 
-      return new Response(
-        null,
-        {
-          status: 204,
-          headers: corsHeaders()
-        }
-      );
+      return new Response(null, {
+        status: 204,
+        headers: corsHeaders()
+      });
 
     }
 
 
-    /* --------------------------------------------------------
+    /* -------------------------------------------------------
        HEALTH
-       -------------------------------------------------------- */
+       ------------------------------------------------------- */
 
     if (
       url.pathname === "/api/health" &&
@@ -622,13 +232,17 @@ export default {
     }
 
 
-    /* --------------------------------------------------------
+    /* -------------------------------------------------------
        SOURCING API
-       -------------------------------------------------------- */
+       ------------------------------------------------------- */
 
-    if (url.pathname === "/api/sourcing") {
+    if (
+      url.pathname === "/api/sourcing"
+    ) {
 
-      if (request.method !== "POST") {
+      if (
+        request.method !== "POST"
+      ) {
 
         return jsonResponse(
           {
@@ -649,9 +263,9 @@ export default {
     }
 
 
-    /* --------------------------------------------------------
-       STATIC ASSETS
-       -------------------------------------------------------- */
+    /* -------------------------------------------------------
+       STATIC WEBSITE
+       ------------------------------------------------------- */
 
     if (env.ASSETS) {
 
@@ -669,19 +283,18 @@ export default {
         headers: {
           ...corsHeaders(),
           "Content-Type":
-            "text/plain; charset=UTF-8"
+            "text/plain; charset=utf-8"
         }
       }
     );
 
   }
-
 };
 
 
-/* ============================================================
+/* =========================================================
    SOURCING REQUEST
-   ============================================================ */
+   ========================================================= */
 
 async function handleSourcingRequest(
   request,
@@ -690,6 +303,10 @@ async function handleSourcingRequest(
 
   let body;
 
+
+  /* -------------------------------------------------------
+     Parse JSON
+     ------------------------------------------------------- */
 
   try {
 
@@ -710,37 +327,50 @@ async function handleSourcingRequest(
   }
 
 
+  /* -------------------------------------------------------
+     Read fields
+     ------------------------------------------------------- */
+
   const requirement =
     clean(
-      body?.requirement
+      body?.requirement ??
+      body?.requirements ??
+      body?.brief
     );
 
-
-  const inputProduct =
+  const productInput =
     clean(
-      body?.product
+      body?.product ??
+      body?.product_material ??
+      body?.productMaterial
     );
 
-
-  const inputQuantity =
+  const quantityInput =
     clean(
       body?.quantity
     );
 
-
-  const inputTargetPrice =
+  const targetPriceInput =
     clean(
-      body?.targetPrice
+      body?.targetPrice ??
+      body?.target_price ??
+      body?.price
     );
 
-
-  const inputDestination =
+  const destinationInput =
     clean(
       body?.destination
     );
 
 
-  if (!requirement) {
+  /* -------------------------------------------------------
+     Validation
+     ------------------------------------------------------- */
+
+  if (
+    !requirement &&
+    !productInput
+  ) {
 
     return jsonResponse(
       {
@@ -754,43 +384,60 @@ async function handleSourcingRequest(
   }
 
 
-  /* ----------------------------------------------------------
-     STRUCTURE REQUEST
-     ---------------------------------------------------------- */
+  /* -------------------------------------------------------
+     Combined input
+     ------------------------------------------------------- */
 
-  const analysis = {
+  const combined = [
 
     requirement,
 
-    product:
-      inputProduct ||
-      extractProduct(requirement),
+    productInput,
 
-    quantity:
-      inputQuantity ||
-      extractQuantity(requirement),
+    quantityInput,
 
-    targetPrice:
-      inputTargetPrice ||
-      extractPrice(requirement),
+    targetPriceInput,
 
-    destination:
-      inputDestination ||
-      extractDestination(requirement)
+    destinationInput
 
-  };
+  ]
+    .filter(Boolean)
+    .join(" ");
 
 
-  /* ----------------------------------------------------------
-     TAVILY KEY
-     ---------------------------------------------------------- */
+  /* -------------------------------------------------------
+     Normalize requirement
+     ------------------------------------------------------- */
 
-  if (!env.TAVILY_API_KEY) {
+  const normalized =
+    normalizeRequirement({
+
+      requirement,
+
+      productInput,
+
+      quantityInput,
+
+      targetPriceInput,
+
+      destinationInput,
+
+      combined
+
+    });
+
+
+  /* -------------------------------------------------------
+     Tavily API key
+     ------------------------------------------------------- */
+
+  if (
+    !env.TAVILY_API_KEY
+  ) {
 
     return jsonResponse(
       {
         ok: false,
-
         error:
           "TAVILY_API_KEY is not configured in Cloudflare Worker secrets."
       },
@@ -800,33 +447,83 @@ async function handleSourcingRequest(
   }
 
 
-  /* ----------------------------------------------------------
-     SEARCH
-     ---------------------------------------------------------- */
+  /* -------------------------------------------------------
+     REAL WEB SEARCH
+     ------------------------------------------------------- */
 
   try {
 
-    const searchResult =
+    const search =
       await searchSuppliersWithTavily(
-        analysis,
+        normalized,
         env.TAVILY_API_KEY
       );
 
 
+    /* -----------------------------------------------------
+       Normalize supplier results
+       ----------------------------------------------------- */
+
     const matches =
       normalizeSupplierResults(
-        searchResult.results,
-        analysis
+        search.results || [],
+        normalized
       );
 
+
+    /* -----------------------------------------------------
+       Readiness scoring
+       ----------------------------------------------------- */
 
     const scoring =
       calculateReadiness(
-        analysis
+        normalized
       );
 
 
-    return jsonResponse({
+    /* -----------------------------------------------------
+       Brief
+       ----------------------------------------------------- */
+
+    const brief = {
+
+      product:
+        normalized.product ||
+        "Sourcing requirement",
+
+      quantity:
+        normalized.quantity ||
+        null,
+
+      targetPrice:
+        normalized.targetPrice ||
+        null,
+
+      destination:
+        normalized.destination ||
+        null,
+
+      requirement:
+        normalized.requirement ||
+        combined
+
+    };
+
+
+    /* =====================================================
+       IMPORTANT FRONTEND RESPONSE STRUCTURE
+       =====================================================
+
+       Current CASEVO script.js expects:
+
+       data.analysis.normalized
+       data.analysis.scoring
+       data.analysis.matches
+
+       So these MUST remain nested here.
+       ===================================================== */
+
+    const response = {
 
       ok: true,
 
@@ -836,15 +533,30 @@ async function handleSourcingRequest(
       message:
         "CASEVO supplier discovery completed successfully.",
 
+      brief,
+
+
       analysis: {
 
-        ...analysis,
+        normalized,
 
-        scoring
+        scoring,
+
+        matches
 
       },
 
+
+      /* ---------------------------------------------------
+         Backward compatibility
+         --------------------------------------------------- */
+
       matches,
+
+
+      /* ---------------------------------------------------
+         Metadata
+         --------------------------------------------------- */
 
       meta: {
 
@@ -861,47 +573,46 @@ async function handleSourcingRequest(
           false,
 
         verificationNote:
-          "Public-web candidates are not verified suppliers. Supplier identity, manufacturing capability, certifications, MOQ and commercial terms require independent verification.",
+          "Public-web candidates are not verified suppliers. Company identity, manufacturing capability, certifications, MOQ, production capacity and commercial contacts must be independently verified before placing an order.",
 
         searchQueries:
-          searchResult.searchQueries,
+          search.searchQueries,
 
         resultsScanned:
-          searchResult.results.length,
+          search.resultsScanned,
 
         suppliersReturned:
           matches.length,
 
         creditsUsed:
-          searchResult.credits,
+          search.creditsUsed,
 
         timestamp:
           new Date().toISOString()
 
       }
 
-    });
-
-  } catch (error) {
-
-    console.error(
-      "CASEVO sourcing error:",
-      error
-    );
+    };
 
 
     return jsonResponse(
+      response
+    );
+
+
+  } catch (error) {
+
+    return jsonResponse(
       {
+
         ok: false,
 
         error:
           "Supplier web search failed.",
 
         details:
-          clean(
-            error?.message ||
-            "Unknown search error."
-          )
+          error?.message ||
+          "Unknown search error."
 
       },
       502
@@ -912,9 +623,347 @@ async function handleSourcingRequest(
 }
 
 
-/* ============================================================
-   TAVILY SEARCH ENGINE
-   ============================================================ */
+/* =========================================================
+   REQUIREMENT NORMALIZATION
+   ========================================================= */
+
+function normalizeRequirement(
+  input
+) {
+
+  const requirement =
+    clean(
+      input.requirement
+    );
+
+  const combined =
+    clean(
+      input.combined
+    );
+
+
+  let product =
+    clean(
+      input.productInput
+    );
+
+  if (!product) {
+
+    product =
+      extractProduct(
+        combined
+      );
+
+  }
+
+
+  let quantity =
+    clean(
+      input.quantityInput
+    );
+
+  if (!quantity) {
+
+    quantity =
+      extractQuantity(
+        combined
+      );
+
+  }
+
+
+  let targetPrice =
+    clean(
+      input.targetPriceInput
+    );
+
+  if (!targetPrice) {
+
+    targetPrice =
+      extractPrice(
+        combined
+      );
+
+  }
+
+
+  let destination =
+    clean(
+      input.destinationInput
+    );
+
+  if (!destination) {
+
+    destination =
+      extractDestination(
+        combined
+      );
+
+  }
+
+
+  /* -------------------------------------------------------
+     Structured requirements
+     ------------------------------------------------------- */
+
+  const requirements = [];
+
+  const lower =
+    combined.toLowerCase();
+
+
+  if (product) {
+
+    requirements.push(
+      `Product / material: ${product}`
+    );
+
+  }
+
+
+  if (quantity) {
+
+    requirements.push(
+      `Quantity: ${quantity}`
+    );
+
+  }
+
+
+  if (targetPrice) {
+
+    requirements.push(
+      `Target price: ${targetPrice}`
+    );
+
+  }
+
+
+  if (destination) {
+
+    requirements.push(
+      `Destination: ${destination}`
+    );
+
+  }
+
+
+  /* -------------------------------------------------------
+     Thickness
+     ------------------------------------------------------- */
+
+  const thickness =
+    combined.match(
+      /\b\d+(?:\.\d+)?\s*(?:mm|cm|inch|inches)\b/i
+    );
+
+
+  if (thickness) {
+
+    requirements.push(
+      `Thickness: ${thickness[0]}`
+    );
+
+  }
+
+
+  /* -------------------------------------------------------
+     Color
+     ------------------------------------------------------- */
+
+  const colors = [
+
+    "black",
+    "white",
+    "brown",
+    "red",
+    "blue",
+    "green",
+    "navy",
+    "tan",
+    "beige",
+    "grey",
+    "gray",
+    "burgundy"
+
+  ];
+
+
+  const foundColors =
+    colors.filter(
+      color =>
+        lower.includes(color)
+    );
+
+
+  if (
+    foundColors.length
+  ) {
+
+    requirements.push(
+      `Color: ${foundColors.join(", ")}`
+    );
+
+  }
+
+
+  /* -------------------------------------------------------
+     Leather grade
+     ------------------------------------------------------- */
+
+  if (
+    /full[\s-]?grain/i.test(
+      combined
+    )
+  ) {
+
+    requirements.push(
+      "Leather grade: full-grain"
+    );
+
+  } else if (
+    /top[\s-]?grain/i.test(
+      combined
+    )
+  ) {
+
+    requirements.push(
+      "Leather grade: top-grain"
+    );
+
+  } else if (
+    /genuine leather/i.test(
+      combined
+    )
+  ) {
+
+    requirements.push(
+      "Material type: genuine leather"
+    );
+
+  }
+
+
+  /* -------------------------------------------------------
+     Application
+     ------------------------------------------------------- */
+
+  const useCase = [];
+
+
+  if (
+    /shoe|sneaker|footwear/i.test(
+      combined
+    )
+  ) {
+
+    useCase.push(
+      "footwear"
+    );
+
+  }
+
+
+  if (
+    /upper/i.test(
+      combined
+    )
+  ) {
+
+    useCase.push(
+      "shoe upper"
+    );
+
+  }
+
+
+  if (
+    useCase.length
+  ) {
+
+    requirements.push(
+      `Application: ${useCase.join(", ")}`
+    );
+
+  }
+
+
+  if (
+    !requirements.length &&
+    requirement
+  ) {
+
+    requirements.push(
+      requirement
+    );
+
+  }
+
+
+  /* -------------------------------------------------------
+     Tags
+     ------------------------------------------------------- */
+
+  const tags =
+    unique([
+
+      product &&
+        "product specified",
+
+      quantity &&
+        "quantity specified",
+
+      targetPrice &&
+        "target price specified",
+
+      destination &&
+        "destination specified",
+
+      thickness &&
+        "thickness specified",
+
+      /full[\s-]?grain/i.test(
+        combined
+      ) &&
+        "full-grain",
+
+      /shoe|sneaker|footwear/i.test(
+        combined
+      ) &&
+        "footwear",
+
+      /upper/i.test(
+        combined
+      ) &&
+        "shoe upper"
+
+    ].filter(Boolean));
+
+
+  return {
+
+    requirement,
+
+    product,
+
+    quantity,
+
+    targetPrice,
+
+    destination,
+
+    requirements,
+
+    tags
+
+  };
+
+}
+
+
+/* =========================================================
+   TAVILY SEARCH
+   ========================================================= */
 
 async function searchSuppliersWithTavily(
   analysis,
@@ -922,37 +971,37 @@ async function searchSuppliersWithTavily(
 ) {
 
   const product =
-    clean(
-      analysis?.product
-    ) ||
-    clean(
-      analysis?.requirement
-    ) ||
+    analysis.product ||
+    analysis.requirement ||
     "supplier";
 
 
-  const requirement =
-    clean(
-      analysis?.requirement
-    );
-
-
   const destination =
-    clean(
-      analysis?.destination
-    );
+    analysis.destination ||
+    "";
 
+
+  /* -------------------------------------------------------
+     Multiple sourcing queries
+     ------------------------------------------------------- */
 
   const queries =
-    buildSearchQueries(
-      product,
-      requirement,
-      destination
-    );
+    unique([
+
+      `"${product}" China manufacturer factory OEM supplier official website`,
+
+      `"${product}" China factory production manufacturer exporter OEM`,
+
+      `"${product}" China manufacturer footwear supplier factory ${
+        destination || "export"
+      }`
+
+    ]);
 
 
   const responses =
     await Promise.all(
+
       queries.map(
         query =>
           tavilySearch(
@@ -960,47 +1009,51 @@ async function searchSuppliersWithTavily(
             apiKey
           )
       )
+
     );
 
 
   const allResults = [];
 
 
-  for (
-    let i = 0;
-    i < responses.length;
-    i++
-  ) {
+  responses.forEach(
+    (
+      data,
+      index
+    ) => {
 
-    const results =
-      Array.isArray(
-        responses[i]?.results
-      )
-        ? responses[i].results
-        : [];
-
-
-    for (
-      const result of results
-    ) {
-
-      if (!result?.url) {
-        continue;
-      }
+      const results =
+        Array.isArray(
+          data?.results
+        )
+          ? data.results
+          : [];
 
 
-      allResults.push({
+      results.forEach(
+        result => {
 
-        ...result,
+          if (
+            !result?.url
+          ) {
+            return;
+          }
 
-        _searchQuery:
-          queries[i]
 
-      });
+          allResults.push({
+
+            ...result,
+
+            _searchQuery:
+              queries[index]
+
+          });
+
+        }
+      );
 
     }
-
-  }
+  );
 
 
   const deduplicated =
@@ -1017,18 +1070,25 @@ async function searchSuppliersWithTavily(
     searchQueries:
       queries,
 
-    credits:
+    resultsScanned:
+      allResults.length,
+
+    creditsUsed:
       responses.reduce(
+
         (
           sum,
           item
         ) =>
+
           sum +
           Number(
             item?.usage?.credits ||
             0
           ),
+
         0
+
       )
 
   };
@@ -1036,211 +1096,111 @@ async function searchSuppliersWithTavily(
 }
 
 
-/* ============================================================
-   SEARCH QUERY BUILDER
-   ============================================================ */
-
-function buildSearchQueries(
-  product,
-  requirement,
-  destination
-) {
-
-  const p =
-    clean(product) ||
-    "supplier";
-
-
-  const r =
-    clean(requirement)
-      .slice(
-        0,
-        180
-      );
-
-
-  const d =
-    clean(destination);
-
-
-  const destinationPart =
-    d
-      ? `"${d}"`
-      : "";
-
-
-  /*
-   * IMPORTANT:
-   *
-   * Do not force China when the buyer did not
-   * specify China.
-   *
-   * If destination is USA, it is still reasonable
-   * to discover overseas suppliers that export there.
-   */
-
-  const queries = [
-
-    `"${p}" manufacturer factory official website ${destinationPart}`,
-
-    `"${p}" OEM ODM manufacturer factory ${destinationPart}`,
-
-    `"${p}" manufacturer production facility exporter ${destinationPart}`,
-
-    `"${p}" factory supplier company contact ${destinationPart}`
-
-  ];
-
-
-  /*
-   * If China is explicitly mentioned, add
-   * China-focused queries.
-   */
-
-  if (
-    /china|chinese|中国/i.test(
-      `${requirement} ${destination}`
-    )
-  ) {
-
-    queries.push(
-      `"${p}" China manufacturer factory official website`,
-      `"${p}" China OEM ODM manufacturer exporter`
-    );
-
-  }
-
-
-  return uniqueStrings(
-    queries
-  ).slice(
-    0,
-    6
-  );
-
-}
-
-
-/* ============================================================
-   TAVILY REQUEST
-   ============================================================ */
+/* =========================================================
+   TAVILY API CALL
+   ========================================================= */
 
 async function tavilySearch(
   query,
   apiKey
 ) {
 
-  const controller =
-    new AbortController();
+  const response =
+    await fetch(
+      "https://api.tavily.com/search",
+      {
 
+        method:
+          "POST",
 
-  const timeout =
-    setTimeout(
-      () =>
-        controller.abort(),
-      TAVILY_TIMEOUT_MS
+        headers: {
+
+          "Content-Type":
+            "application/json",
+
+          "Authorization":
+            `Bearer ${apiKey}`
+
+        },
+
+        body:
+          JSON.stringify({
+
+            query:
+              clean(query)
+                .slice(
+                  0,
+                  390
+                ),
+
+            topic:
+              "general",
+
+            search_depth:
+              "basic",
+
+            max_results:
+              10,
+
+            include_answer:
+              false,
+
+            include_raw_content:
+              true,
+
+            include_images:
+              false,
+
+            exclude_domains:
+              EXCLUDED_DOMAINS
+
+          })
+
+      }
     );
 
 
-  try {
-
-    const response =
-      await fetch(
-        TAVILY_ENDPOINT,
-        {
-
-          method:
-            "POST",
-
-          headers: {
-
-            "Content-Type":
-              "application/json",
-
-            "Authorization":
-              `Bearer ${apiKey}`
-
-          },
-
-          body:
-            JSON.stringify({
-
-              query,
-
-              topic:
-                "general",
-
-              search_depth:
-                "advanced",
-
-              max_results:
-                MAX_SEARCH_RESULTS_PER_QUERY,
-
-              include_answer:
-                false,
-
-              include_raw_content:
-                false,
-
-              include_images:
-                false,
-
-              exclude_domains:
-                EXCLUDED_DOMAINS
-
-            }),
-
-          signal:
-            controller.signal
-
-        }
-      );
+  const data =
+    await safeJson(
+      response
+    );
 
 
-    const data =
-      await safeJson(
-        response
-      );
+  if (
+    !response.ok
+  ) {
 
+    throw new Error(
 
-    if (!response.ok) {
+      data?.detail ||
+      data?.error ||
+      `Tavily API returned HTTP ${response.status}`
 
-      throw new Error(
-
-        data?.detail ||
-
-        data?.error ||
-
-        `Tavily API returned HTTP ${response.status}`
-
-      );
-
-    }
-
-
-    return data;
-
-  } finally {
-
-    clearTimeout(
-      timeout
     );
 
   }
 
+
+  return data;
+
 }
 
 
-/* ============================================================
-   DEDUPLICATE RESULTS
-   ============================================================ */
+/* =========================================================
+   RESULT DEDUPLICATION
+   ========================================================= */
 
 function deduplicateResults(
   results
 ) {
 
-  const byDomain =
-    new Map();
+  const seenUrls =
+    new Set();
+
+  const seenDomains =
+    new Set();
+
+  const output = [];
 
 
   for (
@@ -1249,23 +1209,39 @@ function deduplicateResults(
 
     const url =
       normalizeUrl(
-        result?.url
+        result.url
       );
 
 
     const domain =
       getDomain(
-        url
+        result.url
       );
 
 
-    if (!url || !domain) {
+    if (
+      !url ||
+      !domain
+    ) {
+
       continue;
+
     }
 
 
     if (
-      isExcludedDomain(
+      seenUrls.has(
+        url
+      )
+    ) {
+
+      continue;
+
+    }
+
+
+    if (
+      seenDomains.has(
         domain
       )
     ) {
@@ -1275,284 +1251,221 @@ function deduplicateResults(
     }
 
 
-    const candidate = {
+    seenUrls.add(
+      url
+    );
+
+    seenDomains.add(
+      domain
+    );
+
+
+    output.push({
 
       ...result,
 
       url
-
-    };
-
-
-    const previous =
-      byDomain.get(
-        domain
-      );
-
-
-    if (!previous) {
-
-      byDomain.set(
-        domain,
-        candidate
-      );
-
-      continue;
-
-    }
-
-
-    if (
-      rawSearchQuality(candidate) >
-      rawSearchQuality(previous)
-    ) {
-
-      byDomain.set(
-        domain,
-        candidate
-      );
-
-    }
-
-  }
-
-
-  return Array.from(
-    byDomain.values()
-  );
-
-}
-
-
-/* ============================================================
-   NORMALIZE SUPPLIER RESULTS
-   ============================================================ */
-
-function normalizeSupplierResults(
-  results,
-  analysis
-) {
-
-  const candidates = [];
-
-
-  for (
-    const result of
-      Array.isArray(results)
-        ? results
-        : []
-  ) {
-
-    const url =
-      normalizeUrl(
-        result?.url
-      );
-
-
-    const domain =
-      getDomain(
-        url
-      );
-
-
-    if (!url || !domain) {
-      continue;
-    }
-
-
-    if (
-      isExcludedDomain(
-        domain
-      )
-    ) {
-
-      continue;
-
-    }
-
-
-    if (
-      isLowValuePage(
-        result
-      )
-    ) {
-
-      continue;
-
-    }
-
-
-    /*
-     * This is deliberately less aggressive
-     * than the previous version.
-     *
-     * A real manufacturer may have a homepage
-     * or product page that does not contain
-     * "contact us" in the Tavily snippet.
-     */
-
-    if (
-      !hasRealSupplierEvidence(
-        result
-      )
-    ) {
-
-      continue;
-
-    }
-
-
-    const score =
-      calculateMatchScore(
-        result,
-        analysis
-      );
-
-
-    if (score < 42) {
-      continue;
-    }
-
-
-    candidates.push({
-
-      result,
-
-      domain,
-
-      score,
-
-      supplierType:
-        detectSupplierType(
-          result
-        )
 
     });
 
   }
 
 
-  candidates.sort(
-    (
-      a,
-      b
-    ) =>
-      b.score -
-      a.score
-  );
-
-
-  return candidates
-
-    .slice(
-      0,
-      MAX_SUPPLIERS_RETURNED
-    )
-
-    .map(
-      (
-        candidate,
-        index
-      ) =>
-        buildSupplierRecord(
-          candidate,
-          analysis,
-          index
-        )
-    );
+  return output;
 
 }
 
 
-/* ============================================================
-   SUPPLIER RECORD
-   ============================================================ */
+/* =========================================================
+   SUPPLIER NORMALIZATION
+   ========================================================= */
 
-function buildSupplierRecord(
-  candidate,
-  analysis,
-  index
+function normalizeSupplierResults(
+  results,
+  analysis
 ) {
 
-  const result =
-    candidate.result;
+  const candidates =
 
+    results
 
-  const domain =
-    candidate.domain;
-
-
-  return {
-
-    rank:
-      index + 1,
-
-    name:
-      cleanSupplierName(
-        result,
-        domain
-      ),
-
-    location:
-      inferLocation(
-        result,
-        analysis
-      ),
-
-    website:
-      getWebsiteRoot(
-        result.url
-      ),
-
-    sourceUrl:
-      normalizeUrl(
-        result.url
-      ),
-
-    domain,
-
-    supplierType:
-      candidate.supplierType,
-
-    capability:
-      buildCapability(
-        result,
-        analysis
-      ),
-
-    matchScore:
-      candidate.score,
-
-    source:
-      "Public web search",
-
-    verificationStatus:
-      "Unverified — due diligence required",
-
-    contactEmail:
-      extractEmail(
-        `${result?.content || ""} ${result?.raw_content || ""}`
-      ),
-
-    contactPhone:
-      extractPhone(
-        `${result?.content || ""} ${result?.raw_content || ""}`
-      ),
-
-    evidence:
-      buildEvidence(
-        result,
-        analysis
+      .filter(
+        result =>
+          result?.url
       )
 
-  };
+      .filter(
+        result =>
+          !isLowValuePage(
+            result
+          )
+      )
+
+      .map(
+        result => ({
+
+          result,
+
+          domain:
+            getDomain(
+              result.url
+            ),
+
+          supplierType:
+            detectSupplierType(
+              result
+            ),
+
+          score:
+            calculateMatchScore(
+              result,
+              analysis
+            )
+
+        })
+      )
+
+      .filter(
+        candidate =>
+          candidate.domain
+      )
+
+      .sort(
+        (
+          a,
+          b
+        ) =>
+          b.score -
+          a.score
+      );
+
+
+  /* -------------------------------------------------------
+     Prefer strong matches.
+     If the search is weak, return the best candidates
+     rather than pretending the search found nothing.
+     ------------------------------------------------------- */
+
+  const strong =
+    candidates.filter(
+      candidate =>
+        candidate.score >= 48
+    );
+
+
+  const selected =
+    (
+      strong.length
+        ? strong
+        : candidates
+    )
+      .slice(
+        0,
+        8
+      );
+
+
+  return selected.map(
+
+    (
+      candidate,
+      index
+    ) => {
+
+      const result =
+        candidate.result;
+
+
+      const domain =
+        candidate.domain;
+
+
+      const contact =
+        extractContactInfo(
+          result
+        );
+
+
+      const location =
+        inferLocation(
+          result
+        );
+
+
+      return {
+
+        rank:
+          index + 1,
+
+        name:
+          cleanSupplierName(
+            result.title,
+            domain,
+            result.content
+          ),
+
+        location,
+
+        website:
+          getWebsiteRoot(
+            result.url
+          ),
+
+        sourceUrl:
+          result.url,
+
+        domain,
+
+        supplierType:
+          candidate.supplierType,
+
+        capability:
+          buildCapability(
+            result,
+            analysis
+          ),
+
+        matchScore:
+          candidate.score,
+
+        source:
+          "Public web search",
+
+        verificationStatus:
+          "Unverified — due diligence required",
+
+        contactEmail:
+          contact.email,
+
+        contactPhone:
+          contact.phone,
+
+        evidence:
+          clean(
+            result.raw_content ||
+            result.content ||
+            ""
+          ).slice(
+            0,
+            1200
+          ),
+
+        note:
+          `Public-web evidence suggests potential ${candidate.supplierType.toLowerCase()} capability. ` +
+          `Supplier identity and commercial capability require independent verification.`
+
+      };
+
+    }
+
+  );
 
 }
 
 
-/* ============================================================
-   LOW VALUE PAGE FILTER
-   ============================================================ */
+/* =========================================================
+   LOW VALUE FILTER
+   ========================================================= */
 
 function isLowValuePage(
   result
@@ -1560,77 +1473,35 @@ function isLowValuePage(
 
   const title =
     clean(
-      result?.title
+      result.title
     ).toLowerCase();
 
 
   const content =
     clean(
-      result?.content
+      result.content ||
+      result.raw_content ||
+      ""
     ).toLowerCase();
 
 
   const url =
     clean(
-      result?.url
+      result.url
     ).toLowerCase();
 
 
-  const titleUrl =
-    `${title} ${url}`;
+  const combined =
+    `${title} ${content} ${url}`;
 
-
-  /*
-   * Reject obvious article/listing pages
-   * based primarily on title and URL.
-   */
-
-  for (
-    const term of ARTICLE_TERMS
-  ) {
-
-    if (
-      titleUrl.includes(
-        term
-      )
-    ) {
-
-      return true;
-
-    }
-
-  }
-
-
-  /*
-   * Reject obvious directory paths.
-   */
-
-  for (
-    const path of DIRECTORY_PATHS
-  ) {
-
-    if (
-      hasPath(
-        url,
-        path
-      )
-    ) {
-
-      return true;
-
-    }
-
-  }
-
-
-  /*
-   * Generic article-style titles.
-   */
 
   if (
-    /^(top|best|how|why|what|guide|list|review|directory|comparison)\b/i
-      .test(title)
+    EXCLUDED_DOMAINS.some(
+      domain =>
+        url.includes(
+          domain
+        )
+    )
   ) {
 
     return true;
@@ -1638,34 +1509,25 @@ function isLowValuePage(
   }
 
 
-  /*
-   * Obvious listing pages.
-   */
+  if (
+    LOW_VALUE_TERMS.some(
+      term =>
+        combined.includes(
+          term
+        )
+    )
+  ) {
 
-  const listingSignals = [
+    return true;
 
-    "10 suppliers",
-    "20 suppliers",
-    "50 suppliers",
-
-    "10 manufacturers",
-    "20 manufacturers",
-    "50 manufacturers",
-
-    "list of suppliers",
-    "list of manufacturers",
-
-    "directory of suppliers",
-    "directory of manufacturers"
-
-  ];
+  }
 
 
   if (
-    listingSignals.some(
-      signal =>
-        content.includes(
-          signal
+    LOW_VALUE_PATHS.some(
+      path =>
+        url.includes(
+          path
         )
     )
   ) {
@@ -1680,190 +1542,9 @@ function isLowValuePage(
 }
 
 
-/* ============================================================
-   REAL SUPPLIER EVIDENCE
-   ============================================================ */
-
-function hasRealSupplierEvidence(
-  result
-) {
-
-  const title =
-    clean(
-      result?.title
-    );
-
-
-  const content =
-    clean(
-      result?.content
-    );
-
-
-  const url =
-    clean(
-      result?.url
-    );
-
-
-  const text =
-    `${title} ${content} ${url}`
-      .toLowerCase();
-
-
-  const manufacturerCount =
-    countSignals(
-      text,
-      MANUFACTURER_SIGNALS
-    );
-
-
-  const commercialCount =
-    countSignals(
-      text,
-      COMMERCIAL_SIGNALS
-    );
-
-
-  const companyCount =
-    countSignals(
-      text,
-      COMPANY_SIGNALS
-    );
-
-
-  const productCount =
-    countProductSignals(
-      text
-    );
-
-
-  /*
-   * Strongest signal:
-   * manufacturer + product
-   */
-
-  if (
-    manufacturerCount >= 1 &&
-    productCount >= 1
-  ) {
-
-    return true;
-
-  }
-
-
-  /*
-   * Manufacturer + commercial capability.
-   */
-
-  if (
-    manufacturerCount >= 1 &&
-    commercialCount >= 1
-  ) {
-
-    return true;
-
-  }
-
-
-  /*
-   * Company + commercial + product.
-   */
-
-  if (
-    companyCount >= 1 &&
-    commercialCount >= 1 &&
-    productCount >= 1
-  ) {
-
-    return true;
-
-  }
-
-
-  /*
-   * Multiple manufacturing signals.
-   */
-
-  if (
-    manufacturerCount >= 2
-  ) {
-
-    return true;
-
-  }
-
-
-  /*
-   * Some official company pages have weak
-   * wording in search snippets.
-   *
-   * Allow a reasonable fallback when the
-   * title/domain/content strongly indicate
-   * a product company.
-   */
-
-  if (
-    productCount >= 1 &&
-    companyCount >= 1
-  ) {
-
-    return true;
-
-  }
-
-
-  return false;
-
-}
-
-
-/* ============================================================
-   PRODUCT SIGNAL COUNTER
-   ============================================================ */
-
-function countProductSignals(
-  text
-) {
-
-  const value =
-    clean(
-      text
-    ).toLowerCase();
-
-
-  let count = 0;
-
-
-  for (
-    const [
-      term
-    ]
-    of PRODUCT_TERMS
-  ) {
-
-    if (
-      value.includes(
-        term.toLowerCase()
-      )
-    ) {
-
-      count++;
-
-    }
-
-  }
-
-
-  return count;
-
-}
-
-
-/* ============================================================
+/* =========================================================
    MATCH SCORE
-   ============================================================ */
+   ========================================================= */
 
 function calculateMatchScore(
   result,
@@ -1872,64 +1553,56 @@ function calculateMatchScore(
 
   const title =
     clean(
-      result?.title
+      result.title
     );
 
 
   const content =
     clean(
-      result?.content
+      result.content ||
+      result.raw_content ||
+      ""
     );
 
 
   const url =
     clean(
-      result?.url
+      result.url
     );
 
 
   const text =
-    `${title} ${content} ${url}`
-      .toLowerCase();
+    (
+      title +
+      " " +
+      content +
+      " " +
+      url
+    ).toLowerCase();
 
 
   const product =
     clean(
-      analysis?.product
+      analysis.product
     ).toLowerCase();
 
 
-  let score = 0;
+  const productTokens =
+    tokenizeProduct(
+      product
+    );
 
 
-  /*
-   * Tavily relevance.
-   */
-
-  const tavilyScore =
+  let score =
     Number(
-      result?.score ||
+      result.score ||
       0
-    );
+    ) * 45;
 
 
-  if (
-    Number.isFinite(
-      tavilyScore
-    )
-  ) {
-
-    score += Math.min(
-      24,
-      tavilyScore * 24
-    );
-
-  }
-
-
-  /*
-   * Exact product phrase.
-   */
+  /* -------------------------------------------------------
+     Exact product match
+     ------------------------------------------------------- */
 
   if (
     product &&
@@ -1938,102 +1611,111 @@ function calculateMatchScore(
     )
   ) {
 
-    score += 26;
+    score += 25;
 
   }
 
 
-  /*
-   * Product words.
-   */
+  /* -------------------------------------------------------
+     Product token matching
+     ------------------------------------------------------- */
 
-  const productWords =
-    product
+  let tokenHits =
+    0;
 
-      .split(
-        /[\s,\/\-]+/
+
+  for (
+    const token of productTokens
+  ) {
+
+    if (
+      text.includes(
+        token
       )
+    ) {
 
-      .filter(
-        word =>
-          word.length >= 3
-      )
+      tokenHits++;
 
-      .slice(
-        0,
-        10
-      );
+    }
+
+  }
 
 
   if (
-    productWords.length
+    productTokens.length
   ) {
 
-    const matched =
-      productWords.filter(
-        word =>
-          text.includes(
-            word
-          )
-      ).length;
-
-
     score += Math.min(
+
       18,
+
       (
-        matched /
-        productWords.length
-      ) *
-      18
+        tokenHits /
+        productTokens.length
+      ) * 18
+
     );
 
   }
 
 
-  /*
-   * Manufacturing evidence.
-   */
+  /* -------------------------------------------------------
+     Manufacturer signals
+     ------------------------------------------------------- */
 
-  score += Math.min(
-    18,
-    countSignals(
-      text,
-      MANUFACTURER_SIGNALS
-    ) * 4
-  );
+  if (
+    MANUFACTURER_SIGNALS.some(
+      signal =>
+        text.includes(
+          signal
+        )
+    )
+  ) {
 
+    score += 14;
 
-  /*
-   * Commercial capability.
-   */
-
-  score += Math.min(
-    10,
-    countSignals(
-      text,
-      COMMERCIAL_SIGNALS
-    ) * 2
-  );
+  }
 
 
-  /*
-   * Company evidence.
-   */
+  /* -------------------------------------------------------
+     Commercial signals
+     ------------------------------------------------------- */
 
-  score += Math.min(
-    8,
-    countSignals(
-      text,
-      COMPANY_SIGNALS
-    ) * 2
-  );
+  if (
+    COMMERCIAL_SIGNALS.some(
+      signal =>
+        text.includes(
+          signal
+        )
+    )
+  ) {
+
+    score += 8;
+
+  }
 
 
-  /*
-   * China signal.
-   *
-   * This is a preference, not a hard requirement.
-   */
+  /* -------------------------------------------------------
+     Company credibility
+     ------------------------------------------------------- */
+
+  if (
+    COMPANY_SIGNALS.some(
+      signal =>
+        text.includes(
+          signal
+        )
+    )
+  ) {
+
+    score += 6;
+
+  }
+
+
+  /* -------------------------------------------------------
+     China relevance
+     ------------------------------------------------------- */
 
   if (
     CHINA_SIGNALS.some(
@@ -2049,229 +1731,217 @@ function calculateMatchScore(
   }
 
 
-  /*
-   * Destination signal.
-   */
-
-  const destination =
-    clean(
-      analysis?.destination
-    ).toLowerCase();
-
+  /* -------------------------------------------------------
+     Supplier title
+     ------------------------------------------------------- */
 
   if (
-    destination &&
-    text.includes(
-      destination
+    /supplier|manufacturer|factory|oem|odm/i.test(
+      title
     )
   ) {
 
-    score += 4;
+    score += 8;
 
   }
 
 
-  /*
-   * Email / phone evidence.
-   */
+  /* -------------------------------------------------------
+     Article/list penalty
+     ------------------------------------------------------- */
 
   if (
-    extractEmail(
-      content
+    LOW_VALUE_TERMS.some(
+      term =>
+        text.includes(
+          term
+        )
     )
   ) {
 
-    score += 3;
+    score -= 35;
 
   }
 
 
-  if (
-    extractPhone(
-      content
-    )
-  ) {
+  return Math.round(
 
-    score += 2;
-
-  }
-
-
-  /*
-   * Penalties.
-   */
-
-  const penalties = [
-
-    "directory",
-    "marketplace",
-
-    "top 10",
-    "top 20",
-    "top 50",
-
-    "best suppliers",
-    "best manufacturers",
-
-    "review",
-    "reviews",
-
-    "blog",
-    "article",
-    "news",
-
-    "list of suppliers"
-
-  ];
-
-
-  for (
-    const penalty of penalties
-  ) {
-
-    if (
-      text.includes(
-        penalty
-      )
-    ) {
-
-      score -= 8;
-
-    }
-
-  }
-
-
-  return Math.max(
-    0,
-    Math.min(
-      99,
-      Math.round(
+    Math.max(
+      0,
+      Math.min(
+        99,
         score
       )
     )
+
   );
 
 }
 
 
-/* ============================================================
-   RAW SEARCH QUALITY
-   ============================================================ */
+/* =========================================================
+   READINESS SCORE
+   ========================================================= */
 
-function rawSearchQuality(
-  result
+function calculateReadiness(
+  analysis
 ) {
 
-  const text =
-    `${clean(result?.title)} ${clean(result?.content)}`
-      .toLowerCase();
-
-
-  let score = 0;
-
-
-  score +=
-    countSignals(
-      text,
-      MANUFACTURER_SIGNALS
-    ) * 5;
-
-
-  score +=
-    countSignals(
-      text,
-      COMMERCIAL_SIGNALS
-    ) * 3;
-
-
-  score +=
-    countSignals(
-      text,
-      COMPANY_SIGNALS
-    ) * 2;
-
-
-  score +=
-    countProductSignals(
-      text
-    ) * 3;
-
-
-  const tavilyScore =
-    Number(
-      result?.score ||
-      0
+  const hasRequirement =
+    Boolean(
+      analysis.requirement
     );
 
 
-  if (
-    Number.isFinite(
-      tavilyScore
-    )
-  ) {
-
-    score +=
-      tavilyScore * 10;
-
-  }
+  const hasProduct =
+    Boolean(
+      analysis.product
+    );
 
 
-  return score;
+  const hasQuantity =
+    Boolean(
+      analysis.quantity
+    );
+
+
+  const hasPrice =
+    Boolean(
+      analysis.targetPrice
+    );
+
+
+  const hasDestination =
+    Boolean(
+      analysis.destination
+    );
+
+
+  const hasSpecs =
+    analysis.requirements.length >= 3;
+
+
+  const clarity =
+    hasRequirement
+      ? 100
+      : 0;
+
+
+  const specification =
+    Math.round(
+
+      (
+
+        Number(
+          hasProduct
+        ) +
+
+        Number(
+          hasQuantity
+        ) +
+
+        Number(
+          hasDestination
+        ) +
+
+        Number(
+          hasSpecs
+        )
+
+      ) / 4 * 100
+
+    );
+
+
+  const commercial =
+    Math.round(
+
+      (
+
+        Number(
+          hasQuantity
+        ) +
+
+        Number(
+          hasPrice
+        ) +
+
+        Number(
+          hasDestination
+        )
+
+      ) / 3 * 100
+
+    );
+
+
+  const score =
+    Math.round(
+
+      clarity * 0.35 +
+
+      specification * 0.40 +
+
+      commercial * 0.25
+
+    );
+
+
+  return {
+
+    score,
+
+    clarity:
+      `${clarity}%`,
+
+    specification:
+      `${specification}%`,
+
+    commercial:
+      `${commercial}%`,
+
+    note:
+      "Readiness reflects the completeness of the sourcing requirement, not supplier verification."
+
+  };
 
 }
 
 
-/* ============================================================
+/* =========================================================
    SUPPLIER TYPE
-   ============================================================ */
+   ========================================================= */
 
 function detectSupplierType(
   result
 ) {
 
-  const text =
-    `${clean(result?.title)} ${clean(result?.content)}`
-      .toLowerCase();
+  const text = (
 
+    clean(
+      result.title
+    ) +
 
-  const manufacturer =
-    /manufacturer|manufacturing|factory|factories|production facility/
-      .test(text);
+    " " +
 
+    clean(
+      result.content ||
+      result.raw_content
+    ) +
 
-  const oem =
-    /\boem\b|\bodm\b/
-      .test(text);
+    " " +
 
+    clean(
+      result.url
+    )
 
-  const exporter =
-    /exporter|export|exporting/
-      .test(text);
-
-
-  if (
-    manufacturer &&
-    oem
-  ) {
-
-    return "Manufacturer / OEM / ODM";
-
-  }
+  ).toLowerCase();
 
 
   if (
-    manufacturer &&
-    exporter
-  ) {
-
-    return "Manufacturer / Exporter";
-
-  }
-
-
-  if (
-    manufacturer
+    /manufacturer|manufacturing|factory/.test(
+      text
+    )
   ) {
 
     return "Manufacturer / Factory";
@@ -2280,10 +1950,34 @@ function detectSupplierType(
 
 
   if (
-    oem
+    /oem|odm/.test(
+      text
+    )
   ) {
 
     return "OEM / ODM Manufacturer";
+
+  }
+
+
+  if (
+    /exporter|export/.test(
+      text
+    )
+  ) {
+
+    return "Manufacturer / Exporter";
+
+  }
+
+
+  if (
+    /supplier/.test(
+      text
+    )
+  ) {
+
+    return "Manufacturer / Supplier";
 
   }
 
@@ -2293,935 +1987,170 @@ function detectSupplierType(
 }
 
 
-/* ============================================================
-   SUPPLIER NAME
-   ============================================================ */
-
-function cleanSupplierName(
-  result,
-  domain
-) {
-
-  let title =
-    sanitizeWebText(
-      result?.title
-    );
-
-
-  title =
-    title
-
-      .replace(
-        /\s*[|–—-]\s*(official website|official site|home|homepage)$/i,
-        ""
-      )
-
-      .replace(
-        /\s*[|–—-]\s*(manufacturer|factory|supplier)$/i,
-        ""
-      )
-
-      .replace(
-        /\s*[|–—-]\s*(china|usa|india|vietnam)$/i,
-        ""
-      )
-
-      .trim();
-
-
-  if (
-    looksLikeArticleTitle(
-      title
-    )
-  ) {
-
-    title = "";
-
-  }
-
-
-  if (
-    title.length > 100
-  ) {
-
-    title = "";
-
-  }
-
-
-  if (
-    !title ||
-    looksGenericSupplierTitle(
-      title
-    )
-  ) {
-
-    return (
-      companyNameFromDomain(
-        domain
-      ) ||
-      "Potential manufacturer"
-    );
-
-  }
-
-
-  return title;
-
-}
-
-
-/* ============================================================
-   ARTICLE TITLE DETECTION
-   ============================================================ */
-
-function looksLikeArticleTitle(
-  title
-) {
-
-  const value =
-    clean(
-      title
-    ).toLowerCase();
-
-
-  if (!value) {
-    return true;
-  }
-
-
-  return (
-
-    /^(top|best|how|why|what|guide|list|review|directory|comparison)\b/i
-      .test(value)
-
-    ||
-
-    value.includes(
-      "suppliers in "
-    )
-
-    ||
-
-    value.includes(
-      "manufacturers in "
-    )
-
-    ||
-
-    value.includes(
-      "factories in "
-    )
-
-  );
-
-}
-
-
-/* ============================================================
-   GENERIC SUPPLIER TITLE
-   ============================================================ */
-
-function looksGenericSupplierTitle(
-  title
-) {
-
-  const value =
-    clean(
-      title
-    ).toLowerCase();
-
-
-  const genericTerms = [
-
-    "oem shoe manufacturer",
-
-    "shoe manufacturer in china",
-
-    "shoe factory in china",
-
-    "leather manufacturer in china",
-
-    "leather supplier in china",
-
-    "trusted factory",
-
-    "custom shoes manufacturer",
-
-    "custom footwear manufacturer",
-
-    "shoe manufacturers",
-
-    "leather manufacturers",
-
-    "footwear manufacturers"
-
-  ];
-
-
-  return genericTerms.some(
-    term =>
-      value.includes(
-        term
-      )
-  );
-
-}
-
-
-/* ============================================================
+/* =========================================================
    CAPABILITY
-   ============================================================ */
+   ========================================================= */
 
 function buildCapability(
   result,
   analysis
 ) {
 
-  const product =
+  const evidence =
     clean(
-      analysis?.product
-    ) ||
+      result.raw_content ||
+      result.content ||
+      ""
+    );
+
+
+  const product =
+    analysis.product ||
     "the requested product";
 
 
-  const evidence =
-    buildEvidence(
-      result,
-      analysis
+  if (
+    !evidence
+  ) {
+
+    return (
+      `Public-web result related to ${product}. ` +
+      `Direct supplier verification is required.`
     );
 
-
-  return truncate(
-
-    `Public-web evidence indicates potential manufacturing or supply capability related to ${product}. ${evidence}`,
-
-    MAX_EVIDENCE
-
-  );
-
-}
-
-
-/* ============================================================
-   EVIDENCE
-   ============================================================ */
-
-function buildEvidence(
-  result,
-  analysis
-) {
-
-  const title =
-    sanitizeWebText(
-      result?.title
-    );
-
-
-  const content =
-    sanitizeWebText(
-      result?.content
-    );
-
-
-  const combined =
-    `${title}. ${content}`;
-
-
-  const relevant =
-    extractRelevantEvidence(
-      combined,
-      analysis?.product
-    );
-
-
-  return truncate(
-
-    relevant ||
-
-    "Public-web supplier evidence returned for review.",
-
-    MAX_EVIDENCE
-
-  );
-
-}
-
-
-/* ============================================================
-   RELEVANT EVIDENCE
-   ============================================================ */
-
-function extractRelevantEvidence(
-  text,
-  product
-) {
-
-  const cleaned =
-    sanitizeWebText(
-      text
-    );
-
-
-  if (!cleaned) {
-    return "";
   }
 
 
-  const sentences =
-    splitSentences(
-      cleaned
-    );
+  return (
 
+    `Public-web evidence indicates potential manufacturing or supply capability related to ${product}. ` +
 
-  const productWords =
-    clean(
-      product
+    evidence.slice(
+      0,
+      650
     )
 
-      .toLowerCase()
+  );
 
-      .split(
-        /[\s,\/\-]+/
+}
+
+
+/* =========================================================
+   SUPPLIER NAME
+   ========================================================= */
+
+function cleanSupplierName(
+  title,
+  domain,
+  content
+) {
+
+  let value =
+    clean(
+      title
+    )
+      .replace(
+        /\s*[|–—-]\s*(official website|official site|home|homepage)$/i,
+        ""
       )
+      .trim();
 
-      .filter(
-        word =>
-          word.length >= 3
-      )
 
-      .slice(
-        0,
-        10
+  const articleLike =
+    /^(top|best|how|why|what|guide|list|review|directory|supplier directory)/i
+      .test(
+        value
       );
 
 
-  const ranked =
-    sentences.map(
-      sentence => {
+  if (
+    !value ||
+    articleLike
+  ) {
 
-        const lower =
-          sentence.toLowerCase();
-
-
-        let score = 0;
-
-
-        for (
-          const word of productWords
-        ) {
-
-          if (
-            lower.includes(
-              word
-            )
-          ) {
-
-            score += 3;
-
-          }
-
-        }
+    const fromContent =
+      extractCompanyNameFromContent(
+        content
+      );
 
 
-        score +=
-          countSignals(
-            lower,
-            MANUFACTURER_SIGNALS
-          ) * 5;
+    if (
+      fromContent
+    ) {
 
+      value =
+        fromContent;
 
-        score +=
-          countSignals(
-            lower,
-            COMMERCIAL_SIGNALS
-          ) * 2;
+    }
 
-
-        score +=
-          countSignals(
-            lower,
-            COMPANY_SIGNALS
-          );
-
-
-        if (
-          extractEmail(
-            sentence
-          )
-        ) {
-
-          score += 2;
-
-        }
-
-
-        return {
-
-          sentence,
-
-          score
-
-        };
-
-      }
-    );
-
-
-  ranked.sort(
-    (
-      a,
-      b
-    ) =>
-      b.score -
-      a.score
-  );
-
-
-  return ranked
-
-    .filter(
-      item =>
-        item.score > 0
-    )
-
-    .slice(
-      0,
-      3
-    )
-
-    .map(
-      item =>
-        item.sentence
-    )
-
-    .join(
-      " "
-    );
-
-}
-
-
-/* ============================================================
-   WEB TEXT SANITIZATION
-   ============================================================ */
-
-function sanitizeWebText(
-  value
-) {
-
-  let text =
-    clean(
-      value
-    );
-
-
-  if (!text) {
-    return "";
   }
-
-
-  /*
-   * Markdown images.
-   */
-
-  text =
-    text.replace(
-      /!\[[^\]]*\]\([^)]+\)/g,
-      " "
-    );
-
-
-  /*
-   * Markdown links.
-   */
-
-  text =
-    text.replace(
-      /\[([^\]]+)\]\([^)]+\)/g,
-      "$1"
-    );
-
-
-  /*
-   * HTTP / HTTPS URLs.
-   */
-
-  text =
-    text.replace(
-      /https?:\/\/[^\s<>"']+/gi,
-      " "
-    );
-
-
-  /*
-   * WWW URLs.
-   */
-
-  text =
-    text.replace(
-      /www\.[^\s<>"']+/gi,
-      " "
-    );
-
-
-  /*
-   * HTML tags.
-   */
-
-  text =
-    text.replace(
-      /<[^>]*>/g,
-      " "
-    );
-
-
-  /*
-   * HTML entities.
-   */
-
-  text =
-    text.replace(
-      /&(?:amp|nbsp|quot|lt|gt);/gi,
-      " "
-    );
-
-
-  /*
-   * Navigation garbage.
-   */
-
-  text =
-    text.replace(
-      /\b(cookie policy|privacy policy|terms of use|subscribe now|sign up now)\b/gi,
-      " "
-    );
-
-
-  /*
-   * Base64-like garbage.
-   */
-
-  text =
-    text.replace(
-      /[A-Za-z0-9+/]{120,}={0,2}/g,
-      " "
-    );
-
-
-  /*
-   * Percent-encoded garbage.
-   */
-
-  text =
-    text.replace(
-      /(?:%[0-9A-Fa-f]{2}){8,}/g,
-      " "
-    );
-
-
-  /*
-   * Domain garbage chains.
-   */
-
-  text =
-    text.replace(
-      /\b(?:[A-Za-z0-9_-]{20,}\.){2,}[A-Za-z0-9_-]{2,}\b/g,
-      " "
-    );
-
-
-  /*
-   * Repeated separators.
-   */
-
-  text =
-    text.replace(
-      /([|])\1+/g,
-      "$1"
-    );
-
-
-  /*
-   * Excessive punctuation.
-   */
-
-  text =
-    text.replace(
-      /([.])\1{3,}/g,
-      "..."
-    );
-
-
-  /*
-   * Normalize whitespace.
-   */
-
-  text =
-    text.replace(
-      /\s+/g,
-      " "
-    );
-
-
-  text =
-    text.trim();
-
-
-  return truncate(
-    text,
-    MAX_EVIDENCE
-  );
-
-}
-
-
-/* ============================================================
-   SENTENCE SPLITTER
-   ============================================================ */
-
-function splitSentences(
-  text
-) {
-
-  return text
-
-    .split(
-      /(?<=[.!?。！？])\s+/
-    )
-
-    .map(
-      clean
-    )
-
-    .filter(
-      Boolean
-    );
-
-}
-
-
-/* ============================================================
-   EMAIL
-   ============================================================ */
-
-function extractEmail(
-  text
-) {
-
-  const match =
-    clean(
-      text
-    ).match(
-      /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i
-    );
-
-
-  return match
-    ? match[0]
-    : "";
-
-}
-
-
-/* ============================================================
-   PHONE
-   ============================================================ */
-
-function extractPhone(
-  text
-) {
-
-  const match =
-    clean(
-      text
-    ).match(
-
-      /(?:\+\d{1,3}[\s.-]?)?(?:\(?\d{2,4}\)?[\s.-]?)?\d{3,4}[\s.-]?\d{3,4}(?:[\s.-]?\d{1,4})?/
-
-    );
-
-
-  if (!match) {
-    return "";
-  }
-
-
-  const value =
-    clean(
-      match[0]
-    );
 
 
   if (
-    value.replace(
-      /\D/g,
-      ""
-    ).length < 7
+    !value
   ) {
 
-    return "";
+    value =
+      companyNameFromDomain(
+        domain
+      );
 
   }
 
 
-  return value.slice(
+  return (
+
+    value ||
+    "Potential manufacturer"
+
+  ).slice(
     0,
-    30
+    180
   );
 
 }
 
 
-/* ============================================================
-   LOCATION
-   ============================================================ */
+/* =========================================================
+   COMPANY NAME FROM CONTENT
+   ========================================================= */
 
-function inferLocation(
-  result,
-  analysis
+function extractCompanyNameFromContent(
+  content
 ) {
 
   const text =
-    `${clean(result?.title)} ${clean(result?.content)} ${clean(result?.url)}`
-      .toLowerCase();
+    clean(
+      content
+    );
+
+
+  const patterns = [
+
+    /(?:welcome to|about us at|about)\s+([A-Z][A-Za-z0-9&.,' -]{3,80})/i,
+
+    /([A-Z][A-Za-z0-9&.,' -]{3,80})\s+(?:is a|are a)\s+(?:manufacturer|factory|supplier)/i
+
+  ];
 
 
   for (
-    const location of LOCATIONS
+    const pattern of patterns
   ) {
+
+    const match =
+      text.match(
+        pattern
+      );
+
 
     if (
-      text.includes(
-        location.toLowerCase()
-      )
+      match?.[1]
     ) {
 
-      return location;
-
-    }
-
-  }
-
-
-  /*
-   * If no supplier location can be detected,
-   * use the requested destination only as context.
-   *
-   * It is NOT presented as supplier location
-   * when the actual location is unknown.
-   */
-
-  return "Not determined";
-
-}
-
-
-/* ============================================================
-   READINESS SCORE
-   ============================================================ */
-
-function calculateReadiness(
-  analysis
-) {
-
-  let clarity = 20;
-  let specification = 15;
-  let commercial = 20;
-
-
-  const requirement =
-    clean(
-      analysis?.requirement
-    );
-
-
-  if (
-    requirement.length >= 40
-  ) {
-
-    clarity += 25;
-
-  }
-
-
-  if (
-    analysis?.product
-  ) {
-
-    clarity += 20;
-    specification += 10;
-
-  }
-
-
-  if (
-    analysis?.quantity
-  ) {
-
-    commercial += 20;
-
-  }
-
-
-  if (
-    analysis?.targetPrice
-  ) {
-
-    commercial += 20;
-
-  }
-
-
-  if (
-    analysis?.destination
-  ) {
-
-    commercial += 15;
-
-  }
-
-
-  if (
-    /\d+(?:\.\d+)?\s*mm\b/i.test(
-      requirement
-    )
-  ) {
-
-    specification += 20;
-
-  }
-
-
-  if (
-    /full[- ]?grain|top[- ]?grain|genuine leather|leather/i.test(
-      requirement
-    )
-  ) {
-
-    specification += 10;
-
-  }
-
-
-  if (
-    /black|brown|white|red|blue|green|navy|beige|color|colour/i.test(
-      requirement
-    )
-  ) {
-
-    specification += 5;
-
-  }
-
-
-  if (
-    /lwg|iso\s*9001|reach|rohs|oeko[- ]?tex|gots|grs|bsci|sedex/i.test(
-      requirement
-    )
-  ) {
-
-    specification += 5;
-
-  }
-
-
-  clarity =
-    Math.min(
-      100,
-      clarity
-    );
-
-
-  specification =
-    Math.min(
-      100,
-      specification
-    );
-
-
-  commercial =
-    Math.min(
-      100,
-      commercial
-    );
-
-
-  const score =
-    Math.round(
-
-      (
-        clarity +
-        specification +
-        commercial
-      ) / 3
-
-    );
-
-
-  let note =
-    "Basic sourcing brief. Additional commercial or technical information is recommended before supplier verification.";
-
-
-  if (score >= 85) {
-
-    note =
-      "Strong sourcing brief. The requirement contains enough information for supplier screening.";
-
-  } else if (score >= 70) {
-
-    note =
-      "Good sourcing brief. Adding missing specifications would improve supplier matching.";
-
-  }
-
-
-  return {
-
-    score,
-
-    clarity,
-
-    specification,
-
-    commercial,
-
-    note
-
-  };
-
-}
-
-
-/* ============================================================
-   PRODUCT EXTRACTION
-   ============================================================ */
-
-function extractProduct(
-  text
-) {
-
-  const value =
-    clean(
-      text
-    ).toLowerCase();
-
-
-  for (
-    const [
-      term,
-      product
-    ]
-    of PRODUCT_TERMS
-  ) {
-
-    if (
-      value.includes(
-        term.toLowerCase()
-      )
-    ) {
-
-      return product;
+      return clean(
+        match[1]
+      );
 
     }
 
@@ -3233,151 +2162,75 @@ function extractProduct(
 }
 
 
-/* ============================================================
-   QUANTITY EXTRACTION
-   ============================================================ */
+/* =========================================================
+   COMPANY NAME FROM DOMAIN
+   ========================================================= */
 
-function extractQuantity(
-  text
+function companyNameFromDomain(
+  domain
 ) {
 
-  const match =
-    clean(
-      text
-    ).match(
-
-      /(\d[\d,.\s]*)\s*(pairs?|pcs?|pieces?|kg|kgs|kilograms?|tons?|tonnes?|mt|sqm|sqft|square meters?|units?)/i
-
-    );
-
-
-  return match
-    ? clean(
-        match[0]
-      )
-    : "";
-
-}
-
-
-/* ============================================================
-   PRICE EXTRACTION
-   ============================================================ */
-
-function extractPrice(
-  text
-) {
-
-  const match =
-    clean(
-      text
-    ).match(
-
-      /(?:usd|us\$|\$)\s*[\d,.]+(?:\s*(?:per|\/)\s*[a-zA-Z0-9 ]+)?/i
-
-    );
-
-
-  return match
-    ? clean(
-        match[0]
-      )
-    : "";
-
-}
-
-
-/* ============================================================
-   DESTINATION EXTRACTION
-   ============================================================ */
-
-function extractDestination(
-  text
-) {
-
-  const value =
-    clean(
-      text
-    ).toLowerCase();
-
-
-  for (
-    const [
-      term,
-      destination
-    ]
-    of DESTINATIONS
+  if (
+    !domain
   ) {
 
-    if (
-      value.includes(
-        term
-      )
-    ) {
-
-      return destination;
-
-    }
+    return "";
 
   }
 
 
-  return "";
+  const parts =
+    domain
+      .replace(
+        /^www\./i,
+        ""
+      )
+      .split(".");
+
+
+  if (
+    !parts.length
+  ) {
+
+    return "";
+
+  }
+
+
+  return parts[0]
+    .replace(
+      /[-_]+/g,
+      " "
+    )
+    .trim()
+    .replace(
+      /\b\w/g,
+      letter =>
+        letter.toUpperCase()
+    );
 
 }
 
 
-/* ============================================================
-   URL NORMALIZATION
-   ============================================================ */
+/* =========================================================
+   DOMAIN
+   ========================================================= */
 
-function normalizeUrl(
-  value
+function getDomain(
+  url
 ) {
 
   try {
 
-    const parsed =
-      new URL(
-        clean(
-          value
-        )
-      );
-
-
-    parsed.hash =
-      "";
-
-
-    const trackingParams = [
-
-      "utm_source",
-      "utm_medium",
-      "utm_campaign",
-      "utm_term",
-      "utm_content",
-
-      "gclid",
-      "fbclid",
-
-      "ref",
-      "source"
-
-    ];
-
-
-    for (
-      const key of trackingParams
-    ) {
-
-      parsed.searchParams.delete(
-        key
-      );
-
-    }
-
-
-    return parsed.toString();
+    return new URL(
+      url
+    )
+      .hostname
+      .replace(
+        /^www\./i,
+        ""
+      )
+      .toLowerCase();
 
   } catch {
 
@@ -3388,9 +2241,9 @@ function normalizeUrl(
 }
 
 
-/* ============================================================
+/* =========================================================
    WEBSITE ROOT
-   ============================================================ */
+   ========================================================= */
 
 function getWebsiteRoot(
   url
@@ -3414,35 +2267,56 @@ function getWebsiteRoot(
 
   } catch {
 
-    return "";
+    return clean(
+      url
+    );
 
   }
 
 }
 
 
-/* ============================================================
-   DOMAIN
-   ============================================================ */
+/* =========================================================
+   URL NORMALIZATION
+   ========================================================= */
 
-function getDomain(
+function normalizeUrl(
   url
 ) {
 
   try {
 
-    return new URL(
-      url
-    )
+    const parsed =
+      new URL(
+        url
+      );
 
-      .hostname
 
-      .replace(
-        /^www\./i,
-        ""
-      )
+    parsed.hash = "";
 
-      .toLowerCase();
+
+    const trackingParams = [
+
+      "utm_source",
+      "utm_medium",
+      "utm_campaign",
+      "utm_term",
+      "utm_content",
+      "gclid",
+      "fbclid"
+
+    ];
+
+
+    trackingParams.forEach(
+      parameter =>
+        parsed.searchParams.delete(
+          parameter
+        )
+    );
+
+
+    return parsed.toString();
 
   } catch {
 
@@ -3453,236 +2327,607 @@ function getDomain(
 }
 
 
-/* ============================================================
-   COMPANY NAME FROM DOMAIN
-   ============================================================ */
+/* =========================================================
+   LOCATION
+   ========================================================= */
 
-function companyNameFromDomain(
-  domain
+function inferLocation(
+  result
 ) {
 
-  const value =
+  const text = (
+
     clean(
-      domain
-    );
+      result.title
+    ) +
 
+    " " +
 
-  if (!value) {
-    return "";
-  }
-
-
-  const parts =
-    value.split(
-      "."
-    );
-
-
-  if (
-    parts.length < 2
-  ) {
-
-    return value;
-
-  }
-
-
-  const name =
-    parts[0]
-
-      .replace(
-        /[-_]+/g,
-        " "
-      )
-
-      .replace(
-        /\s+/g,
-        " "
-      )
-
-      .trim();
-
-
-  if (!name) {
-    return "";
-  }
-
-
-  return name
-
-    .split(
-      " "
-    )
-
-    .map(
-      word =>
-        word
-          ? word.charAt(0).toUpperCase() +
-            word.slice(1)
-          : ""
-    )
-
-    .join(
-      " "
-    );
-
-}
-
-
-/* ============================================================
-   URL PATH CHECK
-   ============================================================ */
-
-function hasPath(
-  url,
-  path
-) {
-
-  const normalized =
     clean(
-      url
-    )
-      .replace(
-        /\/+$/,
-        ""
-      )
-      .toLowerCase();
+      result.content ||
+      result.raw_content
+    ) +
 
+    " " +
 
-  const target =
-    path
-      .toLowerCase();
-
-
-  return (
-    normalized.includes(
-      target
-    )
-  );
-
-}
-
-
-/* ============================================================
-   EXCLUDED DOMAIN CHECK
-   ============================================================ */
-
-function isExcludedDomain(
-  domain
-) {
-
-  const value =
     clean(
-      domain
-    ).toLowerCase();
-
-
-  if (!value) {
-    return true;
-  }
-
-
-  if (
-    EXCLUDED_DOMAINS.some(
-      excluded =>
-        value === excluded ||
-        value.endsWith(
-          "." +
-          excluded
-        )
+      result.url
     )
-  ) {
 
-    return true;
-
-  }
+  ).toLowerCase();
 
 
-  if (
-    EXCLUDED_TLDS.some(
-      tld =>
-        value.endsWith(
-          tld
-        )
-    )
-  ) {
+  const locations = [
 
-    return true;
+    [
+      "Guangzhou, China",
+      ["guangzhou"]
+    ],
 
-  }
+    [
+      "Dongguan, China",
+      ["dongguan"]
+    ],
 
+    [
+      "Foshan, China",
+      ["foshan"]
+    ],
 
-  return false;
+    [
+      "Shenzhen, China",
+      ["shenzhen"]
+    ],
 
-}
+    [
+      "Quanzhou, China",
+      ["quanzhou"]
+    ],
 
+    [
+      "Jinjiang, China",
+      ["jinjiang"]
+    ],
 
-/* ============================================================
-   SIGNAL COUNTER
-   ============================================================ */
+    [
+      "Wenzhou, China",
+      ["wenzhou"]
+    ],
 
-function countSignals(
-  text,
-  signals
-) {
+    [
+      "Putian, China",
+      ["putian"]
+    ],
 
-  let count = 0;
+    [
+      "Guangdong, China",
+      ["guangdong"]
+    ],
+
+    [
+      "Zhejiang, China",
+      ["zhejiang"]
+    ],
+
+    [
+      "Fujian, China",
+      ["fujian"]
+    ],
+
+    [
+      "Jiangsu, China",
+      ["jiangsu"]
+    ],
+
+    [
+      "China",
+      ["china"]
+    ],
+
+    [
+      "India",
+      ["india"]
+    ],
+
+    [
+      "Vietnam",
+      ["vietnam"]
+    ],
+
+    [
+      "Indonesia",
+      ["indonesia"]
+    ],
+
+    [
+      "Thailand",
+      ["thailand"]
+    ],
+
+    [
+      "Bangladesh",
+      ["bangladesh"]
+    ],
+
+    [
+      "Pakistan",
+      ["pakistan"]
+    ],
+
+    [
+      "Turkey",
+      ["turkey"]
+    ],
+
+    [
+      "Italy",
+      ["italy"]
+    ],
+
+    [
+      "United States",
+      [
+        "united states",
+        "usa",
+        "u.s.a."
+      ]
+    ],
+
+    [
+      "Mexico",
+      ["mexico"]
+    ],
+
+    [
+      "Brazil",
+      ["brazil"]
+    ]
+
+  ];
 
 
   for (
-    const signal of signals
+    const [
+      label,
+      signals
+    ] of locations
   ) {
 
     if (
-      text.includes(
-        signal
+      signals.some(
+        signal =>
+          text.includes(
+            signal
+          )
       )
     ) {
 
-      count++;
+      return label;
 
     }
 
   }
 
 
-  return count;
+  return "Not determined";
 
 }
 
 
-/* ============================================================
-   UNIQUE STRINGS
-   ============================================================ */
+/* =========================================================
+   CONTACT EXTRACTION
+   ========================================================= */
 
-function uniqueStrings(
-  values
+function extractContactInfo(
+  result
 ) {
 
-  return Array.from(
+  const text =
+    clean(
 
-    new Set(
+      `${
 
-      values
+        result.content ||
+        ""
 
-        .map(
-          clean
-        )
+      } ${
 
-        .filter(
-          Boolean
-        )
+        result.raw_content ||
+        ""
 
+      }`
+
+    );
+
+
+  const emailMatch =
+    text.match(
+
+      /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i
+
+    );
+
+
+  const phoneMatch =
+    text.match(
+
+      /(?:\+?\d[\d\s().-]{7,}\d)/
+
+    );
+
+
+  return {
+
+    email:
+      emailMatch
+        ? emailMatch[0]
+        : "",
+
+    phone:
+      phoneMatch
+        ? phoneMatch[0]
+        : ""
+
+  };
+
+}
+
+
+/* =========================================================
+   PRODUCT EXTRACTION
+   ========================================================= */
+
+function extractProduct(
+  text
+) {
+
+  const value =
+    clean(
+      text
+    );
+
+
+  if (
+    !value
+  ) {
+
+    return "";
+
+  }
+
+
+  const patterns = [
+
+    /((?:premium\s+)?full[\s-]?grain\s+leather\s+shoe\s+upper)/i,
+
+    /((?:full[\s-]?grain\s+)?leather\s+shoe\s+upper)/i,
+
+    /((?:genuine\s+)?leather\s+shoe\s+upper)/i,
+
+    /((?:microfiber|synthetic|pu)\s+leather\s+(?:shoe\s+)?upper)/i,
+
+    /((?:shoe|sneaker|footwear)\s+(?:upper|leather))/i
+
+  ];
+
+
+  for (
+    const pattern of patterns
+  ) {
+
+    const match =
+      value.match(
+        pattern
+      );
+
+
+    if (
+      match?.[1]
+    ) {
+
+      return clean(
+        match[1]
+      );
+
+    }
+
+  }
+
+
+  const keywords = [
+
+    "microfiber leather",
+    "synthetic leather",
+    "pu leather",
+
+    "full-grain leather",
+    "full grain leather",
+
+    "genuine leather",
+
+    "leather shoe upper",
+    "shoe upper",
+    "upper leather",
+
+    "footwear",
+    "sneaker",
+    "leather"
+
+  ];
+
+
+  const lower =
+    value.toLowerCase();
+
+
+  for (
+    const keyword of keywords
+  ) {
+
+    const index =
+      lower.indexOf(
+        keyword
+      );
+
+
+    if (
+      index >= 0
+    ) {
+
+      const start =
+        Math.max(
+          0,
+          index - 30
+        );
+
+
+      const end =
+        Math.min(
+          value.length,
+          index +
+          keyword.length +
+          35
+        );
+
+
+      const fragment =
+        value
+          .slice(
+            start,
+            end
+          )
+          .replace(
+            /^[,.;:()\s-]+/,
+            ""
+          )
+          .replace(
+            /[,.;:()\s-]+$/,
+            ""
+          );
+
+
+      return clean(
+        fragment
+      );
+
+    }
+
+  }
+
+
+  return "";
+
+}
+
+
+/* =========================================================
+   QUANTITY EXTRACTION
+   ========================================================= */
+
+function extractQuantity(
+  text
+) {
+
+  const value =
+    clean(
+      text
+    );
+
+
+  const match =
+    value.match(
+
+      /(\d[\d,.\s]*)\s*(pairs?|pcs?|pieces?|kg|tons?|mt|sqm|sqft|square meters?|units?)/i
+
+    );
+
+
+  return match
+    ? clean(
+        match[0]
+      )
+    : "";
+
+}
+
+
+/* =========================================================
+   PRICE EXTRACTION
+   ========================================================= */
+
+function extractPrice(
+  text
+) {
+
+  const value =
+    clean(
+      text
+    );
+
+
+  const match =
+    value.match(
+
+      /(?:usd|us\$|\$)\s*[\d,.]+(?:\s*(?:per|\/)\s*[a-zA-Z0-9 ]+)?/i
+
+    );
+
+
+  return match
+    ? clean(
+        match[0]
+      )
+    : "";
+
+}
+
+
+/* =========================================================
+   DESTINATION EXTRACTION
+   ========================================================= */
+
+function extractDestination(
+  text
+) {
+
+  const value =
+    clean(
+      text
+    );
+
+
+  const destinations = [
+
+    "United States",
+    "USA",
+
+    "United Kingdom",
+    "UK",
+
+    "Canada",
+    "Australia",
+
+    "Germany",
+    "France",
+    "Italy",
+    "Spain",
+
+    "Japan",
+    "South Korea",
+
+    "UAE",
+    "Saudi Arabia",
+
+    "Singapore",
+
+    "Vietnam",
+    "Indonesia",
+    "Thailand",
+
+    "Turkey",
+    "Mexico",
+    "Brazil"
+
+  ];
+
+
+  const lower =
+    value.toLowerCase();
+
+
+  for (
+    const destination of destinations
+  ) {
+
+    if (
+      lower.includes(
+        destination.toLowerCase()
+      )
+    ) {
+
+      return (
+
+        destination === "USA"
+
+          ? "United States"
+
+          : destination
+
+      );
+
+    }
+
+  }
+
+
+  return "";
+
+}
+
+
+/* =========================================================
+   PRODUCT TOKENIZATION
+   ========================================================= */
+
+function tokenizeProduct(
+  product
+) {
+
+  return unique(
+
+    clean(
+      product
     )
+      .toLowerCase()
+      .split(
+        /[\s,./()_-]+/
+      )
+      .filter(
+
+        word =>
+
+          word.length >= 3 &&
+
+          ![
+            "the",
+            "for",
+            "and",
+            "with"
+          ].includes(
+            word
+          )
+
+      )
 
   );
 
 }
 
 
-/* ============================================================
+/* =========================================================
+   UNIQUE
+   ========================================================= */
+
+function unique(
+  values
+) {
+
+  return [
+
+    ...new Set(
+      values.filter(
+        Boolean
+      )
+    )
+
+  ];
+
+}
+
+
+/* =========================================================
    CLEAN
-   ============================================================ */
+   ========================================================= */
 
 function clean(
   value
@@ -3701,93 +2946,22 @@ function clean(
   return String(
     value
   )
-
     .replace(
       /\s+/g,
       " "
     )
-
     .trim()
-
     .slice(
       0,
-      MAX_TEXT
+      5000
     );
 
 }
 
 
-/* ============================================================
-   TRUNCATE
-   ============================================================ */
-
-function truncate(
-  value,
-  maxLength
-) {
-
-  const text =
-    clean(
-      value
-    );
-
-
-  if (
-    text.length <=
-    maxLength
-  ) {
-
-    return text;
-
-  }
-
-
-  const shortened =
-    text.slice(
-      0,
-      maxLength
-    );
-
-
-  const lastSpace =
-    shortened.lastIndexOf(
-      " "
-    );
-
-
-  if (
-    lastSpace >
-    Math.floor(
-      maxLength * 0.55
-    )
-  ) {
-
-    return (
-
-      shortened
-        .slice(
-          0,
-          lastSpace
-        )
-        .trim() +
-      "..."
-
-    );
-
-  }
-
-
-  return (
-    shortened.trim() +
-    "..."
-  );
-
-}
-
-
-/* ============================================================
+/* =========================================================
    SAFE JSON
-   ============================================================ */
+   ========================================================= */
 
 async function safeJson(
   response
@@ -3806,9 +2980,9 @@ async function safeJson(
 }
 
 
-/* ============================================================
+/* =========================================================
    REQUEST ID
-   ============================================================ */
+   ========================================================= */
 
 function createRequestId() {
 
@@ -3840,34 +3014,9 @@ function createRequestId() {
 }
 
 
-/* ============================================================
-   CORS
-   ============================================================ */
-
-function corsHeaders() {
-
-  return {
-
-    "Access-Control-Allow-Origin":
-      "*",
-
-    "Access-Control-Allow-Methods":
-      "GET, POST, OPTIONS",
-
-    "Access-Control-Allow-Headers":
-      "Content-Type, Accept",
-
-    "Access-Control-Max-Age":
-      "86400"
-
-  };
-
-}
-
-
-/* ============================================================
+/* =========================================================
    JSON RESPONSE
-   ============================================================ */
+   ========================================================= */
 
 function jsonResponse(
   data,
@@ -3901,5 +3050,27 @@ function jsonResponse(
     }
 
   );
+
+}
+
+
+/* =========================================================
+   CORS
+   ========================================================= */
+
+function corsHeaders() {
+
+  return {
+
+    "Access-Control-Allow-Origin":
+      "*",
+
+    "Access-Control-Allow-Methods":
+      "GET, POST, OPTIONS",
+
+    "Access-Control-Allow-Headers":
+      "Content-Type, Accept"
+
+  };
 
 }
