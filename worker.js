@@ -1,17 +1,12 @@
 /**
- * ============================================================
  * CASEVO AI SOURCING ENGINE
- * Supplier Verification & Quality Upgrade
- * Version: 4.0.2
- * ============================================================
- *
- * Cloudflare Worker
+ * Strict Real Company Filter
+ * Version: 4.0.3
  *
  * GET  /api/health
  * POST /api/sourcing
  *
- * Required secret:
- *   TAVILY_API_KEY
+ * Required secret: TAVILY_API_KEY
  *
  * Frontend compatibility:
  *   data.brief
@@ -19,23 +14,9 @@
  *   data.analysis.scoring
  *   data.analysis.matches
  *   data.matches
- *
- * Principles:
- *   1. Public-web evidence only.
- *   2. Never invent company identity.
- *   3. Never invent MOQ / certification / contact details.
- *   4. Prefer identifiable manufacturers over articles/directories.
- *   5. One best candidate per domain.
- *   6. Keep evidence short and frontend-safe.
- * ============================================================
  */
 
-
-/* ============================================================
-   CONFIG
-   ============================================================ */
-
-const VERSION = "4.0.2";
+const VERSION = "4.0.3";
 
 const TAVILY_ENDPOINT =
   "https://api.tavily.com/search";
@@ -44,16 +25,16 @@ const SEARCH_TIMEOUT_MS = 15000;
 
 const RESULTS_PER_QUERY = 10;
 const MAX_SEARCH_QUERIES = 4;
-const MAX_SUPPLIERS = 8;
+const MAX_SUPPLIERS = 6;
 
 const MAX_INPUT_LENGTH = 5000;
 const MAX_QUERY_LENGTH = 390;
-const MAX_CAPABILITY_LENGTH = 480;
-const MAX_EVIDENCE_LENGTH = 800;
+const MAX_CAPABILITY_LENGTH = 440;
+const MAX_EVIDENCE_LENGTH = 700;
 
 
 /* ============================================================
-   EXCLUDED DOMAINS
+   EXCLUDED SOURCES
    ============================================================ */
 
 const EXCLUDED_DOMAINS = [
@@ -101,7 +82,7 @@ const EXCLUDED_TLDS = [
 
 
 /* ============================================================
-   LOW VALUE PAGE SIGNALS
+   LOW-VALUE CONTENT
    ============================================================ */
 
 const LOW_VALUE_TITLE_TERMS = [
@@ -139,6 +120,10 @@ const LOW_VALUE_TITLE_TERMS = [
   "what is",
   "why choose",
 
+  "what's the difference",
+  "what is the difference",
+  "difference between",
+
   "comparison",
   "review",
   "reviews",
@@ -148,7 +133,14 @@ const LOW_VALUE_TITLE_TERMS = [
 
   "price list",
   "catalog",
-  "catalogue"
+  "catalogue",
+
+  "laser engraving on leather",
+  "laser engraving leather",
+
+  "premium leather shoes",
+
+  "complete guide"
 ];
 
 const LOW_VALUE_PATHS = [
@@ -234,7 +226,44 @@ const COMPANY_SIGNALS = [
   "get in touch",
 
   "established",
-  "founded"
+  "founded",
+
+  "company address",
+  "registered office"
+];
+
+const COMPANY_SUFFIX_RE =
+  /\b(?:co\.?\s*,?\s*ltd\.?|company\s+limited|ltd\.?|limited|inc\.?|corporation|corp\.?|llc)\b/i;
+
+const GENERIC_TITLE_TERMS = [
+  "shoe manufacturer",
+  "shoes manufacturer",
+  "footwear manufacturer",
+
+  "leather shoe manufacturer",
+  "leather shoes manufacturer",
+
+  "custom shoes manufacturer",
+  "custom footwear manufacturer",
+
+  "shoe supplier",
+  "shoes supplier",
+  "leather supplier",
+
+  "shoe factory",
+  "shoes factory",
+  "leather factory",
+
+  "oem shoe manufacturer",
+  "odm shoe manufacturer",
+
+  "private label manufacturer",
+
+  "premium leather shoes",
+
+  "custom business casual shoes manufacturer",
+
+  "reliable leather shoes manufacturer"
 ];
 
 const CHINA_SIGNALS = [
@@ -293,82 +322,70 @@ const PRODUCT_TERMS = [
     "premium full-grain leather shoe upper",
     "Premium full-grain leather shoe upper"
   ],
+
   [
     "full-grain leather shoe upper",
     "Full-grain leather shoe upper"
   ],
+
   [
     "full grain leather shoe upper",
     "Full-grain leather shoe upper"
   ],
+
   [
     "leather shoe upper",
     "Leather shoe upper"
   ],
+
   [
     "shoe upper leather",
     "Leather shoe upper"
   ],
+
   [
     "upper leather",
     "Upper leather"
   ],
+
   [
     "genuine leather",
     "Genuine leather"
   ],
+
   [
     "cow leather",
     "Cow leather"
   ],
+
   [
     "cowhide",
     "Cowhide leather"
   ],
+
   [
     "microfiber leather",
     "Microfiber leather"
   ],
+
   [
     "synthetic leather",
     "Synthetic leather"
   ],
+
   [
     "pu leather",
     "PU leather"
   ],
-  [
-    "rubber",
-    "Rubber"
-  ],
-  [
-    "eva",
-    "EVA"
-  ],
-  [
-    "tpr",
-    "TPR"
-  ],
-  [
-    "textile",
-    "Textile"
-  ],
-  [
-    "fabric",
-    "Fabric"
-  ],
-  [
-    "sneaker",
-    "Sneaker"
-  ],
-  [
-    "footwear",
-    "Footwear"
-  ],
-  [
-    "shoe",
-    "Shoe"
-  ],
+
+  ["rubber", "Rubber"],
+  ["eva", "EVA"],
+  ["tpr", "TPR"],
+  ["textile", "Textile"],
+  ["fabric", "Fabric"],
+  ["sneaker", "Sneaker"],
+  ["footwear", "Footwear"],
+  ["shoe", "Shoe"],
 
   ["鞋面革", "Upper leather"],
   ["皮革", "Leather"],
@@ -487,36 +504,56 @@ const LOCATION_RULES = [
 
 
 /* ============================================================
-   MAIN WORKER
+   WORKER ENTRY
    ============================================================ */
 
 export default {
-  async fetch(request, env) {
+
+  async fetch(
+    request,
+    env
+  ) {
+
     const url =
-      new URL(request.url);
+      new URL(
+        request.url
+      );
+
 
     if (
       request.method ===
       "OPTIONS"
     ) {
+
       return new Response(
         null,
         {
-          status: 204,
-          headers: corsHeaders()
+          status:
+            204,
+
+          headers:
+            corsHeaders()
         }
       );
     }
 
 
-    /* HEALTH */
+    /* --------------------------------------------------------
+       HEALTH
+       -------------------------------------------------------- */
 
     if (
-      url.pathname === "/api/health" &&
-      request.method === "GET"
+      url.pathname ===
+        "/api/health" &&
+
+      request.method ===
+        "GET"
     ) {
+
       return jsonResponse({
-        ok: true,
+
+        ok:
+          true,
 
         service:
           "CASEVO AI Sourcing",
@@ -538,23 +575,29 @@ export default {
         timestamp:
           new Date()
             .toISOString()
+
       });
     }
 
 
-    /* SOURCING */
+    /* --------------------------------------------------------
+       SOURCING
+       -------------------------------------------------------- */
 
     if (
       url.pathname ===
       "/api/sourcing"
     ) {
+
       if (
         request.method !==
         "POST"
       ) {
+
         return jsonResponse(
           {
-            ok: false,
+            ok:
+              false,
 
             error:
               "Method not allowed. Use POST /api/sourcing."
@@ -563,6 +606,7 @@ export default {
         );
       }
 
+
       return handleSourcingRequest(
         request,
         env
@@ -570,9 +614,14 @@ export default {
     }
 
 
-    /* STATIC SITE */
+    /* --------------------------------------------------------
+       STATIC WEBSITE
+       -------------------------------------------------------- */
 
-    if (env.ASSETS) {
+    if (
+      env.ASSETS
+    ) {
+
       return env.ASSETS.fetch(
         request
       );
@@ -582,7 +631,8 @@ export default {
     return new Response(
       "CASEVO Worker is running.",
       {
-        status: 200,
+        status:
+          200,
 
         headers: {
           ...corsHeaders(),
@@ -597,23 +647,28 @@ export default {
 
 
 /* ============================================================
-   HANDLE SOURCING
+   SOURCING REQUEST
    ============================================================ */
 
 async function handleSourcingRequest(
   request,
   env
 ) {
+
   let body;
 
+
   try {
+
     body =
       await request.json();
 
   } catch {
+
     return jsonResponse(
       {
-        ok: false,
+        ok:
+          false,
 
         error:
           "Invalid JSON request body."
@@ -630,6 +685,7 @@ async function handleSourcingRequest(
       body?.brief
     );
 
+
   const productInput =
     clean(
       body?.product ??
@@ -637,10 +693,12 @@ async function handleSourcingRequest(
       body?.productMaterial
     );
 
+
   const quantityInput =
     clean(
       body?.quantity
     );
+
 
   const targetPriceInput =
     clean(
@@ -648,6 +706,7 @@ async function handleSourcingRequest(
       body?.target_price ??
       body?.price
     );
+
 
   const destinationInput =
     clean(
@@ -659,9 +718,11 @@ async function handleSourcingRequest(
     !requirement &&
     !productInput
   ) {
+
     return jsonResponse(
       {
-        ok: false,
+        ok:
+          false,
 
         error:
           "Please enter a sourcing requirement."
@@ -705,9 +766,11 @@ async function handleSourcingRequest(
   if (
     !env.TAVILY_API_KEY
   ) {
+
     return jsonResponse(
       {
-        ok: false,
+        ok:
+          false,
 
         error:
           "TAVILY_API_KEY is not configured in Cloudflare Worker secrets."
@@ -718,6 +781,7 @@ async function handleSourcingRequest(
 
 
   try {
+
     const search =
       await searchSuppliersWithTavily(
         normalized,
@@ -733,6 +797,7 @@ async function handleSourcingRequest(
 
 
     const brief = {
+
       product:
         normalized.product ||
         "Sourcing requirement",
@@ -756,7 +821,9 @@ async function handleSourcingRequest(
 
 
     return jsonResponse({
-      ok: true,
+
+      ok:
+        true,
 
       requestId:
         createRequestId(),
@@ -775,6 +842,7 @@ async function handleSourcingRequest(
       matches,
 
       meta: {
+
         source:
           "CASEVO AI Sourcing Engine",
 
@@ -805,21 +873,30 @@ async function handleSourcingRequest(
         creditsUsed:
           search.creditsUsed,
 
+        strictCompanyFilter:
+          true,
+
         timestamp:
           new Date()
             .toISOString()
       }
+
     });
 
-  } catch (error) {
+  } catch (
+    error
+  ) {
+
     console.error(
       "CASEVO sourcing error:",
       error
     );
 
+
     return jsonResponse(
       {
-        ok: false,
+        ok:
+          false,
 
         error:
           "Supplier web search failed.",
@@ -843,11 +920,18 @@ async function handleSourcingRequest(
 function normalizeRequirement(
   input
 ) {
+
   const requirement =
-    clean(input.requirement);
+    clean(
+      input.requirement
+    );
+
 
   const combined =
-    clean(input.combined);
+    clean(
+      input.combined
+    );
+
 
   const product =
     clean(
@@ -857,6 +941,7 @@ function normalizeRequirement(
       combined
     );
 
+
   const quantity =
     clean(
       input.quantityInput
@@ -865,6 +950,7 @@ function normalizeRequirement(
       combined
     );
 
+
   const targetPrice =
     clean(
       input.targetPriceInput
@@ -872,6 +958,7 @@ function normalizeRequirement(
     extractPrice(
       combined
     );
+
 
   const destination =
     clean(
@@ -885,28 +972,44 @@ function normalizeRequirement(
   const requirements = [];
 
   const lower =
-    combined.toLowerCase();
+    combined
+      .toLowerCase();
 
 
-  if (product) {
+  if (
+    product
+  ) {
+
     requirements.push(
       `Product / material: ${product}`
     );
   }
 
-  if (quantity) {
+
+  if (
+    quantity
+  ) {
+
     requirements.push(
       `Quantity: ${quantity}`
     );
   }
 
-  if (targetPrice) {
+
+  if (
+    targetPrice
+  ) {
+
     requirements.push(
       `Target price: ${targetPrice}`
     );
   }
 
-  if (destination) {
+
+  if (
+    destination
+  ) {
+
     requirements.push(
       `Destination: ${destination}`
     );
@@ -919,7 +1022,10 @@ function normalizeRequirement(
     );
 
 
-  if (thickness) {
+  if (
+    thickness
+  ) {
+
     requirements.push(
       `Thickness: ${clean(
         thickness[0]
@@ -947,39 +1053,53 @@ function normalizeRequirement(
   const foundColors =
     colors.filter(
       color =>
-        lower.includes(color)
+        lower.includes(
+          color
+        )
     );
 
 
   if (
     foundColors.length
   ) {
+
     requirements.push(
-      `Color: ${foundColors.join(", ")}`
+      `Color: ${foundColors.join(
+        ", "
+      )}`
     );
   }
 
 
   if (
     /full[\s-]?grain/i
-      .test(combined)
+      .test(
+        combined
+      )
   ) {
+
     requirements.push(
       "Leather grade: full-grain"
     );
 
   } else if (
     /top[\s-]?grain/i
-      .test(combined)
+      .test(
+        combined
+      )
   ) {
+
     requirements.push(
       "Leather grade: top-grain"
     );
 
   } else if (
     /genuine leather/i
-      .test(combined)
+      .test(
+        combined
+      )
   ) {
+
     requirements.push(
       "Material type: genuine leather"
     );
@@ -991,8 +1111,11 @@ function normalizeRequirement(
 
   if (
     /shoe|sneaker|footwear/i
-      .test(combined)
+      .test(
+        combined
+      )
   ) {
+
     applications.push(
       "footwear"
     );
@@ -1000,10 +1123,12 @@ function normalizeRequirement(
 
 
   if (
-    /upper/i.test(
-      combined
-    )
+    /upper/i
+      .test(
+        combined
+      )
   ) {
+
     applications.push(
       "shoe upper"
     );
@@ -1013,10 +1138,13 @@ function normalizeRequirement(
   if (
     applications.length
   ) {
+
     requirements.push(
       `Application: ${unique(
         applications
-      ).join(", ")}`
+      ).join(
+        ", "
+      )}`
     );
   }
 
@@ -1025,6 +1153,7 @@ function normalizeRequirement(
     !requirements.length &&
     requirement
   ) {
+
     requirements.push(
       requirement
     );
@@ -1050,18 +1179,26 @@ function normalizeRequirement(
           "thickness specified",
 
         /full[\s-]?grain/i
-          .test(combined) &&
+          .test(
+            combined
+          ) &&
           "full-grain",
 
         /shoe|sneaker|footwear/i
-          .test(combined) &&
+          .test(
+            combined
+          ) &&
           "footwear",
 
         /upper/i
-          .test(combined) &&
+          .test(
+            combined
+          ) &&
           "shoe upper"
       ]
-        .filter(Boolean)
+        .filter(
+          Boolean
+        )
     );
 
 
@@ -1085,6 +1222,7 @@ async function searchSuppliersWithTavily(
   analysis,
   apiKey
 ) {
+
   const product =
     analysis.product ||
     analysis.requirement ||
@@ -1100,6 +1238,7 @@ async function searchSuppliersWithTavily(
 
   const responses =
     await Promise.allSettled(
+
       queries.map(
         query =>
           tavilySearch(
@@ -1107,6 +1246,7 @@ async function searchSuppliersWithTavily(
             apiKey
           )
       )
+
     );
 
 
@@ -1121,6 +1261,7 @@ async function searchSuppliersWithTavily(
   if (
     !successes.length
   ) {
+
     const firstFailure =
       responses.find(
         item =>
@@ -1140,10 +1281,13 @@ async function searchSuppliersWithTavily(
 
 
   for (
-    const item of successes
+    const item
+    of successes
   ) {
+
     const data =
       item.value;
+
 
     const results =
       Array.isArray(
@@ -1154,24 +1298,27 @@ async function searchSuppliersWithTavily(
 
 
     for (
-      const result of results
+      const result
+      of results
     ) {
-      if (!result?.url) {
-        continue;
+
+      if (
+        result?.url
+      ) {
+
+        allResults.push({
+          ...result,
+
+          _searchQuery:
+            data._query
+        });
       }
-
-
-      allResults.push({
-        ...result,
-
-        _searchQuery:
-          data._query
-      });
     }
   }
 
 
   return {
+
     results:
       deduplicateResults(
         allResults
@@ -1201,15 +1348,18 @@ async function searchSuppliersWithTavily(
 
 
 /* ============================================================
-   SEARCH QUERY BUILDER
+   SEARCH QUERIES
    ============================================================ */
 
 function buildSearchQueries(
   product,
   destination
 ) {
+
   const p =
-    clean(product)
+    clean(
+      product
+    )
       .slice(
         0,
         180
@@ -1218,18 +1368,20 @@ function buildSearchQueries(
 
   const destinationPart =
     destination
+
       ? ` export "${destination}"`
+
       : " exporter";
 
 
   return unique([
-    `"${p}" manufacturer factory official website`,
+    `"${p}" manufacturer factory company official website`,
 
-    `"${p}" OEM ODM manufacturer factory`,
+    `"${p}" OEM ODM manufacturer company factory`,
 
-    `"${p}" manufacturer private label exporter${destinationPart}`,
+    `"${p}" manufacturer private label${destinationPart}`,
 
-    `"${p}" factory company contact production`
+    `"${p}" factory company contact about us`
   ])
     .slice(
       0,
@@ -1246,13 +1398,14 @@ function buildSearchQueries(
 
 
 /* ============================================================
-   TAVILY
+   TAVILY REQUEST
    ============================================================ */
 
 async function tavilySearch(
   query,
   apiKey
 ) {
+
   const controller =
     new AbortController();
 
@@ -1266,6 +1419,7 @@ async function tavilySearch(
 
 
   try {
+
     const response =
       await fetch(
         TAVILY_ENDPOINT,
@@ -1283,8 +1437,11 @@ async function tavilySearch(
 
           body:
             JSON.stringify({
+
               query:
-                clean(query)
+                clean(
+                  query
+                )
                   .slice(
                     0,
                     MAX_QUERY_LENGTH
@@ -1327,6 +1484,7 @@ async function tavilySearch(
     if (
       !response.ok
     ) {
+
       throw new Error(
         data?.detail ||
         data?.error ||
@@ -1337,22 +1495,30 @@ async function tavilySearch(
 
     return {
       ...data,
-      _query: query
+
+      _query:
+        query
     };
 
-  } catch (error) {
+  } catch (
+    error
+  ) {
+
     if (
       error?.name ===
       "AbortError"
     ) {
+
       throw new Error(
         "Supplier search timed out."
       );
     }
 
+
     throw error;
 
   } finally {
+
     clearTimeout(
       timeout
     );
@@ -1367,17 +1533,21 @@ async function tavilySearch(
 function deduplicateResults(
   results
 ) {
+
   const byDomain =
     new Map();
 
 
   for (
-    const result of results
+    const result
+    of results
   ) {
+
     const url =
       normalizeUrl(
         result?.url
       );
+
 
     const domain =
       getDomain(
@@ -1388,8 +1558,11 @@ function deduplicateResults(
     if (
       !url ||
       !domain ||
-      isExcludedDomain(domain)
+      isExcludedDomain(
+        domain
+      )
     ) {
+
       continue;
     }
 
@@ -1408,9 +1581,14 @@ function deduplicateResults(
 
     if (
       !previous ||
-      rawSearchQuality(candidate) >
-        rawSearchQuality(previous)
+      rawSearchQuality(
+        candidate
+      ) >
+      rawSearchQuality(
+        previous
+      )
     ) {
+
       byDomain.set(
         domain,
         candidate
@@ -1433,19 +1611,24 @@ function normalizeSupplierResults(
   results,
   analysis
 ) {
+
   const candidates = [];
 
 
   for (
-    const result of
-      Array.isArray(results)
-        ? results
-        : []
+    const result
+    of Array.isArray(
+      results
+    )
+      ? results
+      : []
   ) {
+
     const url =
       normalizeUrl(
         result?.url
       );
+
 
     const domain =
       getDomain(
@@ -1456,18 +1639,60 @@ function normalizeSupplierResults(
     if (
       !url ||
       !domain ||
-      isExcludedDomain(domain)
+      isExcludedDomain(
+        domain
+      ) ||
+      isLowValuePage(
+        result
+      )
     ) {
+
       continue;
     }
+
+
+    /*
+     * STRICT COMPANY GATE
+     */
+
+    const gate =
+      evaluateRealCompanyGate(
+        result,
+        domain
+      );
 
 
     if (
-      isLowValuePage(result)
+      !gate.pass
     ) {
+
       continue;
     }
 
+
+    /*
+     * STRICT COMPANY NAME
+     */
+
+    const companyName =
+      extractTrustedCompanyName(
+        result,
+        domain,
+        gate
+      );
+
+
+    if (
+      !companyName
+    ) {
+
+      continue;
+    }
+
+
+    /*
+     * MATCH SCORE
+     */
 
     const matchScore =
       calculateMatchScore(
@@ -1476,44 +1701,53 @@ function normalizeSupplierResults(
       );
 
 
-    const verification =
-      calculateVerification(
-        result
-      );
-
-
-    /*
-     * Do not require verification to be high.
-     * Discovery != verification.
-     */
-
     if (
-      matchScore < 40
+      matchScore < 45
     ) {
+
       continue;
     }
+
+
+    const verification =
+      calculateVerification(
+        result,
+        gate
+      );
 
 
     candidates.push({
       result,
       domain,
+      companyName,
       matchScore,
-      verification
+      verification,
+
+      supplierType:
+        detectSupplierType(
+          result
+        )
     });
   }
 
 
   candidates.sort(
-    (a, b) => {
+    (
+      a,
+      b
+    ) => {
+
       if (
         b.matchScore !==
         a.matchScore
       ) {
+
         return (
           b.matchScore -
           a.matchScore
         );
       }
+
 
       return (
         b.verification.score -
@@ -1543,6 +1777,222 @@ function normalizeSupplierResults(
 
 
 /* ============================================================
+   REAL COMPANY GATE
+   ============================================================ */
+
+function evaluateRealCompanyGate(
+  result,
+  domain
+) {
+
+  const title =
+    sanitizeWebText(
+      result?.title
+    );
+
+
+  const content =
+    sanitizeWebText(
+      result?.content ||
+      result?.raw_content ||
+      ""
+    );
+
+
+  const text =
+    `${title} ${content}`
+      .toLowerCase();
+
+
+  const legalName =
+    extractLegalCompanyName(
+      content
+    ) ||
+    extractLegalCompanyName(
+      title
+    );
+
+
+  const titleCompany =
+    extractCompanyNameFromTitle(
+      title
+    );
+
+
+  const contentCompany =
+    extractCompanyNameFromContent(
+      content
+    );
+
+
+  const brandDomain =
+    companyNameFromDomain(
+      domain
+    );
+
+
+  const identitySignal =
+    Boolean(
+      legalName ||
+      titleCompany ||
+      contentCompany ||
+      brandDomain
+    );
+
+
+  const manufacturingSignal =
+    countSignals(
+      text,
+      MANUFACTURER_SIGNALS
+    ) >= 1;
+
+
+  const companyPageSignal =
+    countSignals(
+      text,
+      COMPANY_SIGNALS
+    ) >= 1;
+
+
+  const commercialSignal =
+    countSignals(
+      text,
+      COMMERCIAL_SIGNALS
+    ) >= 1;
+
+
+  const independentDomain =
+    Boolean(
+      domain
+    ) &&
+    !isExcludedDomain(
+      domain
+    );
+
+
+  const evidenceCount =
+    [
+      identitySignal,
+      manufacturingSignal,
+      companyPageSignal,
+      commercialSignal,
+      independentDomain
+    ]
+      .filter(
+        Boolean
+      )
+      .length;
+
+
+  const strongIdentity =
+    Boolean(
+      legalName ||
+      titleCompany ||
+      contentCompany
+    );
+
+
+  /*
+   * STRICT RULE:
+   *
+   * Must be:
+   * - independent domain
+   * - manufacturing evidence
+   * - at least 3 real-company signals
+   * - real identity OR brand-domain + company page
+   */
+
+  const pass =
+    independentDomain &&
+    manufacturingSignal &&
+    evidenceCount >= 3 &&
+    (
+      strongIdentity ||
+      (
+        brandDomain &&
+        companyPageSignal
+      )
+    );
+
+
+  return {
+    pass,
+    evidenceCount,
+
+    legalName,
+    titleCompany,
+    contentCompany,
+    brandDomain,
+
+    manufacturingSignal,
+    companyPageSignal,
+    commercialSignal,
+    independentDomain
+  };
+}
+
+
+/* ============================================================
+   TRUSTED COMPANY NAME
+   ============================================================ */
+
+function extractTrustedCompanyName(
+  result,
+  domain,
+  gate
+) {
+
+  const candidates = [
+    gate?.legalName,
+    gate?.contentCompany,
+    gate?.titleCompany,
+    gate?.brandDomain,
+
+    extractCompanyNameFromContent(
+      result?.content ||
+      result?.raw_content ||
+      ""
+    ),
+
+    extractCompanyNameFromTitle(
+      result?.title ||
+      ""
+    ),
+
+    companyNameFromDomain(
+      domain
+    )
+  ];
+
+
+  for (
+    const candidate
+    of candidates
+  ) {
+
+    const cleaned =
+      cleanCompanyCandidate(
+        candidate
+      );
+
+
+    if (
+      cleaned &&
+      !isGenericCompanyTitle(
+        cleaned
+      )
+    ) {
+
+      return cleaned;
+    }
+  }
+
+
+  return "";
+}
+
+
+/* ============================================================
    SUPPLIER RECORD
    ============================================================ */
 
@@ -1551,6 +2001,7 @@ function buildSupplierRecord(
   analysis,
   index
 ) {
+
   const result =
     candidate.result;
 
@@ -1561,33 +2012,16 @@ function buildSupplierRecord(
     );
 
 
-  const companyName =
-    cleanSupplierName(
-      result,
-      candidate.domain
-    );
-
-
-  const certifications =
-    extractCertifications(
-      result
-    );
-
-
-  const moq =
-    extractMOQ(
-      result
-    );
-
-
   return {
+
     rank:
       index + 1,
 
     name:
-      companyName,
+      candidate.companyName,
 
-    companyName,
+    companyName:
+      candidate.companyName,
 
     location:
       inferLocation(
@@ -1608,9 +2042,7 @@ function buildSupplierRecord(
       candidate.domain,
 
     supplierType:
-      detectSupplierType(
-        result
-      ),
+      candidate.supplierType,
 
     capability:
       buildCapability(
@@ -1630,9 +2062,15 @@ function buildSupplierRecord(
     verificationSignals:
       candidate.verification.signals,
 
-    certifications,
+    certifications:
+      extractCertifications(
+        result
+      ),
 
-    moq,
+    moq:
+      extractMOQ(
+        result
+      ),
 
     contactEmail:
       contact.email,
@@ -1650,38 +2088,26 @@ function buildSupplierRecord(
       "Public web search",
 
     note:
-      "Public-web candidate only. Company identity, capability, certifications, MOQ and commercial terms require independent verification."
+      "Strict company-filter candidate. Company identity, capability, certifications, MOQ and commercial terms still require independent verification."
   };
 }
 
 
 /* ============================================================
-   VERIFICATION SCORE
+   VERIFICATION
    ============================================================ */
 
 function calculateVerification(
-  result
+  result,
+  gate
 ) {
-  const title =
-    clean(
-      result?.title
-    );
 
   const content =
-    clean(
+    sanitizeWebText(
       result?.content ||
       result?.raw_content ||
       ""
     );
-
-  const domain =
-    getDomain(
-      result?.url
-    );
-
-  const text =
-    `${title} ${content}`
-      .toLowerCase();
 
 
   let score = 0;
@@ -1689,38 +2115,44 @@ function calculateVerification(
   const signals = [];
 
 
-  /* Company identity */
+  if (
+    gate?.legalName
+  ) {
 
-  const extractedCompany =
-    extractCompanyNameFromTitle(
-      title
-    ) ||
-    extractCompanyNameFromContent(
-      content
+    score += 25;
+
+    signals.push(
+      "Legal company-name signal"
     );
 
+  } else if (
+    gate?.titleCompany ||
+    gate?.contentCompany
+  ) {
 
-  if (extractedCompany) {
-    score += 20;
+    score += 18;
+
     signals.push(
       "Company identity signal"
+    );
+
+  } else if (
+    gate?.brandDomain
+  ) {
+
+    score += 10;
+
+    signals.push(
+      "Brand-domain signal"
     );
   }
 
 
-  /* Manufacturing */
-
-  const manufacturerCount =
-    countSignals(
-      text,
-      MANUFACTURER_SIGNALS
-    );
-
-
   if (
-    manufacturerCount >= 1
+    gate?.manufacturingSignal
   ) {
-    score += 20;
+
+    score += 22;
 
     signals.push(
       "Manufacturing capability signal"
@@ -1728,19 +2160,23 @@ function calculateVerification(
   }
 
 
-  /* OEM / ODM / export */
+  if (
+    gate?.companyPageSignal
+  ) {
 
-  const commercialCount =
-    countSignals(
-      text,
-      COMMERCIAL_SIGNALS
+    score += 12;
+
+    signals.push(
+      "Company-page signal"
     );
+  }
 
 
   if (
-    commercialCount >= 1
+    gate?.commercialSignal
   ) {
-    score += 12;
+
+    score += 10;
 
     signals.push(
       "Commercial capability signal"
@@ -1748,14 +2184,13 @@ function calculateVerification(
   }
 
 
-  /* Contact evidence */
-
   if (
     extractEmail(
       content
     )
   ) {
-    score += 12;
+
+    score += 10;
 
     signals.push(
       "Email found"
@@ -1768,7 +2203,8 @@ function calculateVerification(
       content
     )
   ) {
-    score += 8;
+
+    score += 6;
 
     signals.push(
       "Phone found"
@@ -1776,15 +2212,14 @@ function calculateVerification(
   }
 
 
-  /* Location */
-
   if (
     inferLocation(
       result
     ) !==
     "Not determined"
   ) {
-    score += 8;
+
+    score += 5;
 
     signals.push(
       "Location signal"
@@ -1792,33 +2227,16 @@ function calculateVerification(
   }
 
 
-  /* Certifications */
-
   if (
     extractCertifications(
       result
     ).length
   ) {
+
     score += 10;
 
     signals.push(
       "Certification signal"
-    );
-  }
-
-
-  /* Domain presence */
-
-  if (
-    domain &&
-    !isExcludedDomain(
-      domain
-    )
-  ) {
-    score += 10;
-
-    signals.push(
-      "Independent domain"
     );
   }
 
@@ -1837,12 +2255,14 @@ function calculateVerification(
   if (
     score >= 75
   ) {
+
     status =
       "Strong public-web identity signals — verification required";
 
   } else if (
-    score >= 50
+    score >= 55
   ) {
+
     status =
       "Moderate public-web identity signals — verification required";
   }
@@ -1850,9 +2270,13 @@ function calculateVerification(
 
   return {
     score,
+
     status,
+
     signals:
-      unique(signals)
+      unique(
+        signals
+      )
   };
 }
 
@@ -1864,17 +2288,20 @@ function calculateVerification(
 function isLowValuePage(
   result
 ) {
+
   const title =
     clean(
       result?.title
     )
       .toLowerCase();
 
+
   const url =
     clean(
       result?.url
     )
       .toLowerCase();
+
 
   const domain =
     getDomain(
@@ -1884,8 +2311,11 @@ function isLowValuePage(
 
   if (
     !domain ||
-    isExcludedDomain(domain)
+    isExcludedDomain(
+      domain
+    )
   ) {
+
     return true;
   }
 
@@ -1897,9 +2327,12 @@ function isLowValuePage(
   if (
     LOW_VALUE_TITLE_TERMS.some(
       term =>
-        titleUrl.includes(term)
+        titleUrl.includes(
+          term
+        )
     )
   ) {
+
     return true;
   }
 
@@ -1907,16 +2340,87 @@ function isLowValuePage(
   if (
     LOW_VALUE_PATHS.some(
       path =>
-        url.includes(path)
+        url.includes(
+          path
+        )
     )
   ) {
+
     return true;
   }
 
 
-  return (
+  if (
     /^(top|best|how|why|what|guide|list|review|directory|comparison)\b/i
-      .test(title)
+      .test(
+        title
+      )
+  ) {
+
+    return true;
+  }
+
+
+  if (
+    /\b(guide|difference|ideas|tips|trends|explained|everything you need to know)\b/i
+      .test(
+        title
+      )
+  ) {
+
+    return true;
+  }
+
+
+  if (
+    isGenericCompanyTitle(
+      title
+    ) &&
+    !COMPANY_SUFFIX_RE.test(
+      title
+    )
+  ) {
+
+    return true;
+  }
+
+
+  return false;
+}
+
+
+/* ============================================================
+   GENERIC TITLE FILTER
+   ============================================================ */
+
+function isGenericCompanyTitle(
+  value
+) {
+
+  const lower =
+    clean(
+      value
+    )
+      .toLowerCase();
+
+
+  if (
+    !lower
+  ) {
+
+    return true;
+  }
+
+
+  return GENERIC_TITLE_TERMS.some(
+    term =>
+      lower === term ||
+      lower.startsWith(
+        `${term} |`
+      ) ||
+      lower.startsWith(
+        `${term} -`
+      )
   );
 }
 
@@ -1929,10 +2433,12 @@ function calculateMatchScore(
   result,
   analysis
 ) {
+
   const title =
     clean(
       result?.title
     );
+
 
   const content =
     clean(
@@ -1941,10 +2447,12 @@ function calculateMatchScore(
       ""
     );
 
+
   const url =
     clean(
       result?.url
     );
+
 
   const text =
     `${title} ${content} ${url}`
@@ -1968,34 +2476,37 @@ function calculateMatchScore(
     Number(
       result?.score ||
       0
-    ) * 40;
+    ) * 38;
 
-
-  /* Exact phrase */
 
   if (
     product &&
-    text.includes(product)
+    text.includes(
+      product
+    )
   ) {
+
     score += 25;
   }
 
 
-  /* Product token overlap */
-
   if (
     tokens.length
   ) {
+
     const hits =
       tokens.filter(
         token =>
-          text.includes(token)
+          text.includes(
+            token
+          )
       )
         .length;
 
 
     score += Math.min(
       20,
+
       (
         hits /
         tokens.length
@@ -2003,8 +2514,6 @@ function calculateMatchScore(
     );
   }
 
-
-  /* Manufacturing */
 
   score +=
     Math.min(
@@ -2017,8 +2526,6 @@ function calculateMatchScore(
     );
 
 
-  /* Commercial */
-
   score +=
     Math.min(
       10,
@@ -2029,8 +2536,6 @@ function calculateMatchScore(
       ) * 2
     );
 
-
-  /* Company */
 
   score +=
     Math.min(
@@ -2043,52 +2548,80 @@ function calculateMatchScore(
     );
 
 
-  /* Supplier-style title */
-
   if (
-    /manufacturer|factory|supplier|oem|odm/i
-      .test(title)
+    COMPANY_SUFFIX_RE.test(
+      title
+    ) ||
+    COMPANY_SUFFIX_RE.test(
+      content
+    )
   ) {
+
     score += 5;
   }
 
 
-  /* China relevance */
+  if (
+    /manufacturer|factory|oem|odm/i
+      .test(
+        title
+      )
+  ) {
+
+    score += 4;
+  }
+
 
   if (
     CHINA_SIGNALS.some(
       signal =>
-        text.includes(signal)
+        text.includes(
+          signal
+        )
     )
   ) {
+
     score += 3;
   }
 
 
   return Math.max(
     0,
+
     Math.min(
       99,
-      Math.round(score)
+      Math.round(
+        score
+      )
     )
   );
 }
 
 
 /* ============================================================
-   RAW RESULT QUALITY
+   RAW SEARCH QUALITY
    ============================================================ */
 
 function rawSearchQuality(
   result
 ) {
-  const text =
-    `${clean(
+
+  const title =
+    clean(
       result?.title
-    )} ${clean(
+    );
+
+
+  const content =
+    clean(
       result?.content ||
-      result?.raw_content
-    )}`
+      result?.raw_content ||
+      ""
+    );
+
+
+  const text =
+    `${title} ${content}`
       .toLowerCase();
 
 
@@ -2124,11 +2657,25 @@ function rawSearchQuality(
 
 
   if (
-    looksLikeArticleTitle(
-      result?.title
+    COMPANY_SUFFIX_RE.test(
+      text
     )
   ) {
-    score -= 20;
+
+    score += 12;
+  }
+
+
+  if (
+    looksLikeArticleTitle(
+      title
+    ) ||
+    isGenericCompanyTitle(
+      title
+    )
+  ) {
+
+    score -= 25;
   }
 
 
@@ -2143,6 +2690,7 @@ function rawSearchQuality(
 function detectSupplierType(
   result
 ) {
+
   const text =
     `${clean(
       result?.title
@@ -2155,19 +2703,30 @@ function detectSupplierType(
 
   const manufacturer =
     /manufacturer|manufacturing|factory|production facility/
-      .test(text);
+      .test(
+        text
+      );
+
 
   const oem =
     /\boem\b|\bodm\b/
-      .test(text);
+      .test(
+        text
+      );
+
 
   const privateLabel =
     /private label/
-      .test(text);
+      .test(
+        text
+      );
+
 
   const exporter =
     /exporter|export|exporting/
-      .test(text);
+      .test(
+        text
+      );
 
 
   if (
@@ -2175,6 +2734,7 @@ function detectSupplierType(
     oem &&
     privateLabel
   ) {
+
     return (
       "Manufacturer / OEM / ODM / Private Label"
     );
@@ -2185,6 +2745,7 @@ function detectSupplierType(
     manufacturer &&
     oem
   ) {
+
     return (
       "Manufacturer / OEM / ODM"
     );
@@ -2195,20 +2756,27 @@ function detectSupplierType(
     manufacturer &&
     exporter
   ) {
+
     return (
       "Manufacturer / Exporter"
     );
   }
 
 
-  if (manufacturer) {
+  if (
+    manufacturer
+  ) {
+
     return (
       "Manufacturer / Factory"
     );
   }
 
 
-  if (oem) {
+  if (
+    oem
+  ) {
+
     return (
       "OEM / ODM Manufacturer"
     );
@@ -2222,172 +2790,54 @@ function detectSupplierType(
 
 
 /* ============================================================
-   COMPANY NAME
+   LEGAL COMPANY NAME
    ============================================================ */
 
-function cleanSupplierName(
-  result,
-  domain
+function extractLegalCompanyName(
+  value
 ) {
-  const title =
+
+  const text =
     sanitizeWebText(
-      result?.title
+      value
     );
-
-  const content =
-    sanitizeWebText(
-      result?.content ||
-      result?.raw_content ||
-      ""
-    );
-
-
-  const candidates = [
-    extractCompanyNameFromTitle(
-      title
-    ),
-
-    extractCompanyNameFromContent(
-      content
-    ),
-
-    companyNameFromDomain(
-      domain
-    )
-  ];
-
-
-  for (
-    const candidate
-    of candidates
-  ) {
-    const cleaned =
-      cleanCompanyCandidate(
-        candidate
-      );
-
-
-    if (cleaned) {
-      return cleaned;
-    }
-  }
-
-
-  return (
-    "Potential manufacturer"
-  );
-}
-
-
-/* ============================================================
-   COMPANY FROM TITLE
-   ============================================================ */
-
-function extractCompanyNameFromTitle(
-  title
-) {
-  const value =
-    clean(title);
 
 
   if (
-    !value ||
-    looksLikeArticleTitle(value)
+    !text
   ) {
+
     return "";
   }
 
 
-  /*
-   * Prefer title parts that look like actual company names.
-   */
+  const patterns = [
 
-  const parts =
-    value
-      .split(
-        /\s+[|–—]\s+|\s+-\s+/
-      )
-      .map(clean)
-      .filter(Boolean);
+    /\b([A-Z][A-Za-z0-9&'.,()\- ]{2,90}\b(?:Co\.?\s*,?\s*Ltd\.?|Company\s+Limited|Ltd\.?|Limited|Inc\.?|Corporation|Corp\.?|LLC))\b/,
 
+    /\b([A-Z][A-Za-z0-9&'.,()\- ]{2,90}\b(?:Shoes|Footwear|Leather)\s+(?:Co\.?\s*,?\s*Ltd\.?|Company\s+Limited|Ltd\.?|Limited))\b/i
 
-  for (
-    const part of parts
-  ) {
-    if (
-      looksLikeCompanyName(part)
-    ) {
-      return part;
-    }
-  }
-
-
-  return (
-    looksLikeCompanyName(value)
-      ? value
-      : ""
-  );
-}
-
-
-/* ============================================================
-   COMPANY FROM CONTENT
-   ============================================================ */
-
-function extractCompanyNameFromContent(
-  content
-) {
-  const text =
-    clean(content);
-
-
-  if (!text) {
-    return "";
-  }
-
-
-  const legalPatterns = [
-    /\b([A-Z][A-Za-z0-9&'.,()\- ]{2,80}\b(?:Co\.?\s*,?\s*Ltd\.?|Company\s+Limited|Ltd\.?|Limited|Inc\.?|Corporation|Corp\.?|LLC))\b/,
-
-    /\b([A-Z][A-Za-z0-9&'.,()\- ]{2,80}\b(?:Shoes|Footwear|Leather)\s+(?:Co\.?\s*,?\s*Ltd\.?|Company\s+Limited|Ltd\.?|Limited))\b/i
   ];
 
 
   for (
     const pattern
-    of legalPatterns
+    of patterns
   ) {
+
     const match =
-      text.match(pattern);
+      text.match(
+        pattern
+      );
 
 
     if (
       match?.[1]
     ) {
-      return match[1];
-    }
-  }
 
-
-  const introPatterns = [
-    /(?:welcome to|about us at|about)\s+([A-Z][A-Za-z0-9&'.,()\- ]{3,80})/i,
-
-    /([A-Z][A-Za-z0-9&'.,()\- ]{3,80})\s+(?:is|are)\s+(?:a|an|one of)\s+(?:professional\s+)?(?:shoe|footwear|leather)?\s*(?:manufacturer|factory|supplier)/i
-  ];
-
-
-  for (
-    const pattern
-    of introPatterns
-  ) {
-    const match =
-      text.match(pattern);
-
-
-    if (
-      match?.[1]
-    ) {
-      return match[1];
+      return clean(
+        match[1]
+      );
     }
   }
 
@@ -2397,56 +2847,227 @@ function extractCompanyNameFromContent(
 
 
 /* ============================================================
-   COMPANY VALIDATION
+   COMPANY NAME FROM TITLE
+   ============================================================ */
+
+function extractCompanyNameFromTitle(
+  title
+) {
+
+  const value =
+    clean(
+      title
+    );
+
+
+  if (
+    !value ||
+    looksLikeArticleTitle(
+      value
+    ) ||
+    isGenericCompanyTitle(
+      value
+    )
+  ) {
+
+    return "";
+  }
+
+
+  const legal =
+    extractLegalCompanyName(
+      value
+    );
+
+
+  if (
+    legal
+  ) {
+
+    return legal;
+  }
+
+
+  const parts =
+    value
+      .split(
+        /\s+[|–—]\s+|\s+-\s+/
+      )
+      .map(
+        clean
+      )
+      .filter(
+        Boolean
+      );
+
+
+  for (
+    const part
+    of parts
+  ) {
+
+    if (
+      looksLikeCompanyName(
+        part
+      ) &&
+      !isGenericCompanyTitle(
+        part
+      )
+    ) {
+
+      return part;
+    }
+  }
+
+
+  return (
+    looksLikeCompanyName(
+      value
+    ) &&
+    !isGenericCompanyTitle(
+      value
+    )
+  )
+    ? value
+    : "";
+}
+
+
+/* ============================================================
+   COMPANY NAME FROM CONTENT
+   ============================================================ */
+
+function extractCompanyNameFromContent(
+  content
+) {
+
+  const text =
+    sanitizeWebText(
+      content
+    );
+
+
+  if (
+    !text
+  ) {
+
+    return "";
+  }
+
+
+  const legal =
+    extractLegalCompanyName(
+      text
+    );
+
+
+  if (
+    legal
+  ) {
+
+    return legal;
+  }
+
+
+  const patterns = [
+
+    /(?:welcome to|about us at|about)\s+([A-Z][A-Za-z0-9&'.,()\- ]{3,80})/i,
+
+    /([A-Z][A-Za-z0-9&'.,()\- ]{3,80})\s+(?:is|are)\s+(?:a|an|one of)\s+(?:professional\s+)?(?:shoe|footwear|leather)?\s*(?:manufacturer|factory|supplier)/i,
+
+    /(?:company name|manufacturer)\s*[:\-]\s*([A-Z][A-Za-z0-9&'.,()\- ]{3,80})/i
+
+  ];
+
+
+  for (
+    const pattern
+    of patterns
+  ) {
+
+    const match =
+      text.match(
+        pattern
+      );
+
+
+    if (
+      match?.[1]
+    ) {
+
+      const candidate =
+        cleanCompanyCandidate(
+          match[1]
+        );
+
+
+      if (
+        candidate &&
+        !isGenericCompanyTitle(
+          candidate
+        )
+      ) {
+
+        return candidate;
+      }
+    }
+  }
+
+
+  return "";
+}
+
+
+/* ============================================================
+   COMPANY NAME VALIDATION
    ============================================================ */
 
 function looksLikeCompanyName(
   value
 ) {
+
   const text =
-    clean(value);
+    clean(
+      value
+    );
+
 
   const lower =
-    text.toLowerCase();
+    text
+      .toLowerCase();
 
 
   if (
     !text ||
     text.length < 3 ||
-    text.length > 100
-  ) {
-    return false;
-  }
-
-
-  if (
+    text.length > 100 ||
     looksLikeArticleTitle(
       text
     )
   ) {
+
     return false;
   }
 
 
-  const generic = [
-    "oem shoe manufacturer",
-    "shoe manufacturer in china",
-    "shoe factory in china",
-    "custom shoes manufacturer",
-    "custom footwear manufacturer",
-    "trusted factory",
-    "leather supplier in china",
-    "leather manufacturer in china",
-    "top china leather shoes"
-  ];
+  if (
+    GENERIC_TITLE_TERMS.some(
+      term =>
+        lower === term
+    )
+  ) {
+
+    return false;
+  }
 
 
   if (
-    generic.some(
-      term =>
-        lower.includes(term)
-    )
+    /\b(guide|difference|ideas|tips|trends|explained)\b/i
+      .test(
+        text
+      )
   ) {
+
     return false;
   }
 
@@ -2462,35 +3083,51 @@ function looksLikeCompanyName(
 function cleanCompanyCandidate(
   value
 ) {
+
   let text =
-    sanitizeWebText(value);
+    sanitizeWebText(
+      value
+    );
 
 
-  if (!text) {
+  if (
+    !text
+  ) {
+
     return "";
   }
 
 
   text =
     text
+
       .replace(
         /\s*[|–—-]\s*(official website|official site|home|homepage)$/i,
         ""
       )
+
       .replace(
         /^\s*(manufacturer|factory|supplier)\s*[|:–—-]\s*/i,
         ""
       )
+
       .replace(
         /\s+/g,
         " "
       )
+
       .trim();
 
 
   if (
-    !looksLikeCompanyName(text)
+    !looksLikeCompanyName(
+      text
+    ) ||
+    isGenericCompanyTitle(
+      text
+    )
   ) {
+
     return "";
   }
 
@@ -2503,25 +3140,33 @@ function cleanCompanyCandidate(
 
 
 /* ============================================================
-   ARTICLE TITLE
+   ARTICLE TITLE DETECTION
    ============================================================ */
 
 function looksLikeArticleTitle(
   title
 ) {
+
   const value =
-    clean(title)
+    clean(
+      title
+    )
       .toLowerCase();
 
 
-  if (!value) {
+  if (
+    !value
+  ) {
+
     return true;
   }
 
 
   return (
     /^(top|best|how|why|what|guide|list|review|directory|comparison)\b/i
-      .test(value)
+      .test(
+        value
+      )
 
     ||
 
@@ -2540,6 +3185,13 @@ function looksLikeArticleTitle(
     value.includes(
       "factories in "
     )
+
+    ||
+
+    /\b(guide|difference|ideas|tips|trends|explained|everything you need to know)\b/i
+      .test(
+        value
+      )
   );
 }
 
@@ -2551,8 +3203,11 @@ function looksLikeArticleTitle(
 function companyNameFromDomain(
   domain
 ) {
+
   const value =
-    clean(domain)
+    clean(
+      domain
+    )
       .replace(
         /^www\./i,
         ""
@@ -2560,16 +3215,25 @@ function companyNameFromDomain(
       .toLowerCase();
 
 
-  if (!value) {
+  if (
+    !value
+  ) {
+
     return "";
   }
 
 
   const first =
-    value.split(".")[0];
+    value.split(
+      "."
+    )[0];
 
 
-  if (!first) {
+  if (
+    !first ||
+    first.length < 3
+  ) {
+
     return "";
   }
 
@@ -2582,27 +3246,54 @@ function companyNameFromDomain(
     "factory",
     "manufacturer",
     "supplier",
-    "china"
+    "china",
+    "customshoes",
+    "shoefactory",
+    "shoemanufacturer"
   ];
 
 
   if (
-    generic.includes(first)
+    generic.includes(
+      first
+    )
   ) {
+
+    return "";
+  }
+
+
+  const alpha =
+    first.replace(
+      /[^a-z0-9-]/g,
+      ""
+    );
+
+
+  if (
+    !alpha ||
+    /^\d+$/.test(
+      alpha
+    )
+  ) {
+
     return "";
   }
 
 
   return first
+
     .replace(
       /[-_]+/g,
       " "
     )
+
     .replace(
       /\b\w/g,
       char =>
         char.toUpperCase()
     )
+
     .trim();
 }
 
@@ -2614,6 +3305,7 @@ function companyNameFromDomain(
 function extractCertifications(
   result
 ) {
+
   const text =
     `${result?.title || ""} ${result?.content || ""} ${result?.raw_content || ""}`;
 
@@ -2628,15 +3320,23 @@ function extractCertifications(
     ]
     of CERTIFICATION_RULES
   ) {
+
     if (
-      pattern.test(text)
+      pattern.test(
+        text
+      )
     ) {
-      found.push(label);
+
+      found.push(
+        label
+      );
     }
   }
 
 
-  return unique(found);
+  return unique(
+    found
+  );
 }
 
 
@@ -2647,6 +3347,7 @@ function extractCertifications(
 function extractMOQ(
   result
 ) {
+
   const text =
     sanitizeWebText(
       `${result?.content || ""} ${result?.raw_content || ""}`
@@ -2654,11 +3355,13 @@ function extractMOQ(
 
 
   const patterns = [
+
     /\bmoq\s*[:\-]?\s*(\d[\d,.\s]*\s*(?:pairs?|pcs?|pieces?|units?|sets?|kg|meters?|yards?))/i,
 
     /\bminimum\s+order(?:\s+quantity)?\s*[:\-]?\s*(\d[\d,.\s]*\s*(?:pairs?|pcs?|pieces?|units?|sets?|kg|meters?|yards?))/i,
 
     /\bminimum\s+order\s+of\s+(\d[\d,.\s]*\s*(?:pairs?|pcs?|pieces?|units?|sets?|kg|meters?|yards?))/i
+
   ];
 
 
@@ -2666,13 +3369,17 @@ function extractMOQ(
     const pattern
     of patterns
   ) {
+
     const match =
-      text.match(pattern);
+      text.match(
+        pattern
+      );
 
 
     if (
       match?.[1]
     ) {
+
       return clean(
         match[1]
       );
@@ -2692,6 +3399,7 @@ function buildCapability(
   result,
   analysis
 ) {
+
   const product =
     clean(
       analysis?.product
@@ -2701,21 +3409,30 @@ function buildCapability(
 
   const evidence =
     extractRelevantEvidence(
+
       `${result?.title || ""}. ${result?.content || ""} ${result?.raw_content || ""}`,
+
       product
+
     );
 
 
-  if (!evidence) {
+  if (
+    !evidence
+  ) {
+
     return (
-      `Public-web evidence indicates potential manufacturing or supply relevance to ${product}. Independent verification is required.`
+      `Public-web evidence indicates potential manufacturing relevance to ${product}. Independent verification is required.`
     );
   }
 
 
   return truncate(
-    `Public-web evidence indicates potential manufacturing or supply capability related to ${product}. ${evidence}`,
+
+    `Public-web evidence indicates potential manufacturing capability related to ${product}. ${evidence}`,
+
     MAX_CAPABILITY_LENGTH
+
   );
 }
 
@@ -2728,17 +3445,24 @@ function buildEvidence(
   result,
   analysis
 ) {
+
   const evidence =
     extractRelevantEvidence(
+
       `${result?.title || ""}. ${result?.content || ""} ${result?.raw_content || ""}`,
+
       analysis?.product
+
     );
 
 
   return truncate(
+
     evidence ||
     "Public-web supplier evidence returned for review.",
+
     MAX_EVIDENCE_LENGTH
+
   );
 }
 
@@ -2751,17 +3475,25 @@ function extractRelevantEvidence(
   text,
   product
 ) {
+
   const cleaned =
-    sanitizeWebText(text);
+    sanitizeWebText(
+      text
+    );
 
 
-  if (!cleaned) {
+  if (
+    !cleaned
+  ) {
+
     return "";
   }
 
 
   const sentences =
-    splitSentences(cleaned)
+    splitSentences(
+      cleaned
+    )
       .filter(
         sentence =>
           sentence.length >= 20
@@ -2769,7 +3501,9 @@ function extractRelevantEvidence(
 
 
   const productWords =
-    tokenizeProduct(product)
+    tokenizeProduct(
+      product
+    )
       .slice(
         0,
         10
@@ -2782,6 +3516,7 @@ function extractRelevantEvidence(
         sentence,
         index
       ) => {
+
         const lower =
           sentence
             .toLowerCase();
@@ -2794,9 +3529,13 @@ function extractRelevantEvidence(
           const word
           of productWords
         ) {
+
           if (
-            lower.includes(word)
+            lower.includes(
+              word
+            )
           ) {
+
             score += 3;
           }
         }
@@ -2823,6 +3562,16 @@ function extractRelevantEvidence(
           );
 
 
+        if (
+          COMPANY_SUFFIX_RE.test(
+            sentence
+          )
+        ) {
+
+          score += 4;
+        }
+
+
         return {
           sentence,
           score,
@@ -2833,7 +3582,10 @@ function extractRelevantEvidence(
 
 
   ranked.sort(
-    (a, b) =>
+    (
+      a,
+      b
+    ) =>
       b.score -
       a.score ||
       a.index -
@@ -2842,21 +3594,28 @@ function extractRelevantEvidence(
 
 
   return unique(
+
     ranked
+
       .filter(
         item =>
           item.score > 0
       )
+
       .slice(
         0,
         4
       )
+
       .map(
         item =>
           item.sentence
       )
+
   )
-    .join(" ");
+    .join(
+      " "
+    );
 }
 
 
@@ -2867,6 +3626,7 @@ function extractRelevantEvidence(
 function extractContactInfo(
   result
 ) {
+
   const text =
     sanitizeWebText(
       `${result?.content || ""} ${result?.raw_content || ""}`
@@ -2874,11 +3634,16 @@ function extractContactInfo(
 
 
   return {
+
     email:
-      extractEmail(text),
+      extractEmail(
+        text
+      ),
 
     phone:
-      extractPhone(text)
+      extractPhone(
+        text
+      )
   };
 }
 
@@ -2890,8 +3655,12 @@ function extractContactInfo(
 function extractEmail(
   text
 ) {
+
   const matches =
-    String(text || "")
+    String(
+      text ||
+      ""
+    )
       .match(
         /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi
       );
@@ -2900,27 +3669,39 @@ function extractEmail(
   if (
     !matches?.length
   ) {
+
     return "";
   }
 
 
   const cleaned =
     unique(
+
       matches
+
         .map(
           email =>
-            clean(email)
+            clean(
+              email
+            )
               .toLowerCase()
         )
+
         .filter(
           email =>
-            !/example\.com$|domain\.com$|email\.com$/
-              .test(email)
+            !/example\.com$|domain\.com$|email\.com$|wixpress\.com$/
+              .test(
+                email
+              )
         )
+
     );
 
 
-  return cleaned[0] || "";
+  return (
+    cleaned[0] ||
+    ""
+  );
 }
 
 
@@ -2931,8 +3712,12 @@ function extractEmail(
 function extractPhone(
   text
 ) {
+
   const matches =
-    String(text || "")
+    String(
+      text ||
+      ""
+    )
       .match(
         /(?:\+\d{1,3}[\s.-]?)?(?:\(?\d{2,4}\)?[\s.-]?)?\d{3,4}[\s.-]?\d{3,4}(?:[\s.-]?\d{1,4})?/g
       );
@@ -2941,15 +3726,21 @@ function extractPhone(
   if (
     !matches?.length
   ) {
+
     return "";
   }
 
 
   for (
-    const match of matches
+    const match
+    of matches
   ) {
+
     const value =
-      clean(match);
+      clean(
+        match
+      );
+
 
     const digits =
       value.replace(
@@ -2962,6 +3753,7 @@ function extractPhone(
       digits.length >= 8 &&
       digits.length <= 16
     ) {
+
       return value.slice(
         0,
         32
@@ -2981,6 +3773,7 @@ function extractPhone(
 function inferLocation(
   result
 ) {
+
   const text =
     `${clean(
       result?.title
@@ -3000,12 +3793,16 @@ function inferLocation(
     ]
     of LOCATION_RULES
   ) {
+
     if (
       signals.some(
         signal =>
-          text.includes(signal)
+          text.includes(
+            signal
+          )
       )
     ) {
+
       return label;
     }
   }
@@ -3022,33 +3819,40 @@ function inferLocation(
 function calculateReadiness(
   analysis
 ) {
+
   const hasRequirement =
     Boolean(
       analysis.requirement
     );
+
 
   const hasProduct =
     Boolean(
       analysis.product
     );
 
+
   const hasQuantity =
     Boolean(
       analysis.quantity
     );
+
 
   const hasPrice =
     Boolean(
       analysis.targetPrice
     );
 
+
   const hasDestination =
     Boolean(
       analysis.destination
     );
 
+
   const hasSpecs =
-    analysis.requirements.length >= 3;
+    analysis.requirements
+      .length >= 3;
 
 
   const clarity =
@@ -3060,10 +3864,21 @@ function calculateReadiness(
   const specification =
     Math.round(
       (
-        Number(hasProduct) +
-        Number(hasQuantity) +
-        Number(hasDestination) +
-        Number(hasSpecs)
+        Number(
+          hasProduct
+        ) +
+
+        Number(
+          hasQuantity
+        ) +
+
+        Number(
+          hasDestination
+        ) +
+
+        Number(
+          hasSpecs
+        )
       ) /
       4 *
       100
@@ -3073,9 +3888,17 @@ function calculateReadiness(
   const commercial =
     Math.round(
       (
-        Number(hasQuantity) +
-        Number(hasPrice) +
-        Number(hasDestination)
+        Number(
+          hasQuantity
+        ) +
+
+        Number(
+          hasPrice
+        ) +
+
+        Number(
+          hasDestination
+        )
       ) /
       3 *
       100
@@ -3091,6 +3914,7 @@ function calculateReadiness(
 
 
   return {
+
     score,
 
     clarity:
@@ -3109,14 +3933,17 @@ function calculateReadiness(
 
 
 /* ============================================================
-   PRODUCT EXTRACTION
+   PRODUCT
    ============================================================ */
 
 function extractProduct(
   text
 ) {
+
   const value =
-    clean(text)
+    clean(
+      text
+    )
       .toLowerCase();
 
 
@@ -3127,11 +3954,13 @@ function extractProduct(
     ]
     of PRODUCT_TERMS
   ) {
+
     if (
       value.includes(
         term.toLowerCase()
       )
     ) {
+
       return product;
     }
   }
@@ -3148,15 +3977,22 @@ function extractProduct(
 function extractQuantity(
   text
 ) {
+
   const match =
-    clean(text)
+    clean(
+      text
+    )
       .match(
         /(\d[\d,.\s]*)\s*(pairs?|pcs?|pieces?|kg|kgs|kilograms?|tons?|tonnes?|mt|sqm|sqft|square meters?|units?)/i
       );
 
 
   return match
-    ? clean(match[0])
+
+    ? clean(
+        match[0]
+      )
+
     : "";
 }
 
@@ -3168,15 +4004,22 @@ function extractQuantity(
 function extractPrice(
   text
 ) {
+
   const match =
-    clean(text)
+    clean(
+      text
+    )
       .match(
         /(?:usd|us\$|\$)\s*[\d,.]+(?:\s*(?:per|\/)\s*[a-zA-Z0-9 ]+)?/i
       );
 
 
   return match
-    ? clean(match[0])
+
+    ? clean(
+        match[0]
+      )
+
     : "";
 }
 
@@ -3188,8 +4031,11 @@ function extractPrice(
 function extractDestination(
   text
 ) {
+
   const value =
-    clean(text)
+    clean(
+      text
+    )
       .toLowerCase();
 
 
@@ -3200,9 +4046,13 @@ function extractDestination(
     ]
     of DESTINATION_RULES
   ) {
+
     if (
-      value.includes(term)
+      value.includes(
+        term
+      )
     ) {
+
       return destination;
     }
   }
@@ -3213,68 +4063,85 @@ function extractDestination(
 
 
 /* ============================================================
-   SANITIZE WEB TEXT
+   WEB TEXT SANITIZATION
    ============================================================ */
 
 function sanitizeWebText(
   value
 ) {
+
   return String(
-    value || ""
+    value ||
+    ""
   )
+
     .replace(
       /<script\b[^>]*>[\s\S]*?<\/script>/gi,
       " "
     )
+
     .replace(
       /<style\b[^>]*>[\s\S]*?<\/style>/gi,
       " "
     )
+
     .replace(
       /!\[[^\]]*\]\([^)]+\)/g,
       " "
     )
+
     .replace(
       /\[([^\]]+)\]\([^)]+\)/g,
       "$1"
     )
+
     .replace(
       /https?:\/\/[^\s<>"']+/gi,
       " "
     )
+
     .replace(
       /www\.[^\s<>"']+/gi,
       " "
     )
+
     .replace(
       /<[^>]*>/g,
       " "
     )
+
     .replace(
       /&(?:amp|nbsp|quot|lt|gt|#39);/gi,
       " "
     )
+
     .replace(
       /(?:%[0-9A-Fa-f]{2}){8,}/g,
       " "
     )
+
     .replace(
       /[A-Za-z0-9+/]{120,}={0,2}/g,
       " "
     )
+
     .replace(
       /(.)\1{12,}/g,
       "$1$1$1"
     )
+
     .replace(
       /\b(cookie policy|privacy policy|terms of use|subscribe now|sign up now)\b/gi,
       " "
     )
+
     .replace(
       /\s+/g,
       " "
     )
+
     .trim()
+
     .slice(
       0,
       MAX_INPUT_LENGTH
@@ -3289,12 +4156,22 @@ function sanitizeWebText(
 function splitSentences(
   text
 ) {
-  return clean(text)
+
+  return clean(
+    text
+  )
+
     .split(
       /(?<=[.!?。！？])\s+/
     )
-    .map(clean)
-    .filter(Boolean);
+
+    .map(
+      clean
+    )
+
+    .filter(
+      Boolean
+    );
 }
 
 
@@ -3305,22 +4182,30 @@ function splitSentences(
 function normalizeUrl(
   value
 ) {
+
   try {
+
     const parsed =
       new URL(
-        clean(value)
+        clean(
+          value
+        )
       );
 
 
     if (
-      parsed.protocol !== "http:" &&
-      parsed.protocol !== "https:"
+      parsed.protocol !==
+        "http:" &&
+      parsed.protocol !==
+        "https:"
     ) {
+
       return "";
     }
 
 
-    parsed.hash = "";
+    parsed.hash =
+      "";
 
 
     [
@@ -3336,13 +4221,16 @@ function normalizeUrl(
       .forEach(
         key =>
           parsed.searchParams
-            .delete(key)
+            .delete(
+              key
+            )
       );
 
 
     return parsed.toString();
 
   } catch {
+
     return "";
   }
 }
@@ -3355,16 +4243,24 @@ function normalizeUrl(
 function getDomain(
   url
 ) {
+
   try {
-    return new URL(url)
+
+    return new URL(
+      url
+    )
+
       .hostname
+
       .replace(
         /^www\./i,
         ""
       )
+
       .toLowerCase();
 
   } catch {
+
     return "";
   }
 }
@@ -3377,9 +4273,13 @@ function getDomain(
 function getWebsiteRoot(
   url
 ) {
+
   try {
+
     const parsed =
-      new URL(url);
+      new URL(
+        url
+      );
 
 
     return (
@@ -3387,6 +4287,7 @@ function getWebsiteRoot(
     );
 
   } catch {
+
     return "";
   }
 }
@@ -3399,12 +4300,18 @@ function getWebsiteRoot(
 function isExcludedDomain(
   domain
 ) {
+
   const value =
-    clean(domain)
+    clean(
+      domain
+    )
       .toLowerCase();
 
 
-  if (!value) {
+  if (
+    !value
+  ) {
+
     return true;
   }
 
@@ -3418,13 +4325,16 @@ function isExcludedDomain(
         )
     )
   ) {
+
     return true;
   }
 
 
   return EXCLUDED_TLDS.some(
     tld =>
-      value.endsWith(tld)
+      value.endsWith(
+        tld
+      )
   );
 }
 
@@ -3436,12 +4346,19 @@ function isExcludedDomain(
 function tokenizeProduct(
   product
 ) {
+
   return unique(
-    clean(product)
+
+    clean(
+      product
+    )
+
       .toLowerCase()
+
       .split(
         /[\s,./()_-]+/
       )
+
       .filter(
         word =>
           word.length >= 3 &&
@@ -3452,20 +4369,24 @@ function tokenizeProduct(
             "with",
             "premium"
           ]
-            .includes(word)
+            .includes(
+              word
+            )
       )
+
   );
 }
 
 
 /* ============================================================
-   COUNT SIGNALS
+   SIGNAL COUNTER
    ============================================================ */
 
 function countSignals(
   text,
   signals
 ) {
+
   let count = 0;
 
 
@@ -3473,9 +4394,13 @@ function countSignals(
     const signal
     of signals
   ) {
+
     if (
-      text.includes(signal)
+      text.includes(
+        signal
+      )
     ) {
+
       count++;
     }
   }
@@ -3492,10 +4417,16 @@ function countSignals(
 function unique(
   values
 ) {
+
   return [
     ...new Set(
-      (values || [])
-        .filter(Boolean)
+      (
+        values ||
+        []
+      )
+        .filter(
+          Boolean
+        )
     )
   ];
 }
@@ -3508,21 +4439,28 @@ function unique(
 function clean(
   value
 ) {
+
   if (
     value === null ||
     typeof value ===
       "undefined"
   ) {
+
     return "";
   }
 
 
-  return String(value)
+  return String(
+    value
+  )
+
     .replace(
       /\s+/g,
       " "
     )
+
     .trim()
+
     .slice(
       0,
       MAX_INPUT_LENGTH
@@ -3538,14 +4476,18 @@ function truncate(
   value,
   maxLength
 ) {
+
   const text =
-    clean(value);
+    clean(
+      value
+    );
 
 
   if (
     text.length <=
     maxLength
   ) {
+
     return text;
   }
 
@@ -3566,24 +4508,24 @@ function truncate(
   if (
     lastSpace >
     Math.floor(
-      maxLength * 0.6
+      maxLength *
+      0.6
     )
   ) {
+
     return (
-      shortened
+      `${shortened
         .slice(
           0,
           lastSpace
         )
-        .trim() +
-      "..."
+        .trim()}...`
     );
   }
 
 
   return (
-    shortened.trim() +
-    "..."
+    `${shortened.trim()}...`
   );
 }
 
@@ -3595,10 +4537,13 @@ function truncate(
 async function safeJson(
   response
 ) {
+
   try {
+
     return await response.json();
 
   } catch {
+
     return {};
   }
 }
@@ -3609,15 +4554,20 @@ async function safeJson(
    ============================================================ */
 
 function createRequestId() {
+
   const timestamp =
     Date.now()
-      .toString(36)
+      .toString(
+        36
+      )
       .toUpperCase();
 
 
   const random =
     Math.random()
-      .toString(36)
+      .toString(
+        36
+      )
       .slice(
         2,
         8
@@ -3636,7 +4586,9 @@ function createRequestId() {
    ============================================================ */
 
 function corsHeaders() {
+
   return {
+
     "Access-Control-Allow-Origin":
       "*",
 
@@ -3660,16 +4612,20 @@ function jsonResponse(
   data,
   status = 200
 ) {
+
   return new Response(
+
     JSON.stringify(
       data,
       null,
       2
     ),
+
     {
       status,
 
       headers: {
+
         ...corsHeaders(),
 
         "Content-Type":
@@ -3679,5 +4635,6 @@ function jsonResponse(
           "no-store"
       }
     }
+
   );
 }
