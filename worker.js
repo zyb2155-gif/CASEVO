@@ -2477,8 +2477,7 @@ function calculateDiscoveryVerification(
     signals:
       unique(signals)
   };
-}
-function isLowValuePage(
+}function isLowValuePage(
   result
 ) {
   const title =
