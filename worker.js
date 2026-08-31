@@ -1,47 +1,6 @@
-None selected 
-
-Skip to content
-Using Gmail with screen readers
-Enable desktop notifications for Gmail.
-   OK  No thanks
-1 of 9
-CASEVO worker.js v4.1.3 CLEAN — 请使用这个附件
-Inbox
-
-郑永彬 <zyb2155@gmail.com>
-Attachments
-10:05 PM (0 minutes ago)
-to me
-
-你好，
-
-这是重新检查过的 CASEVO worker.js v4.1.3 CLEAN 版本。
-
-我已经确认：
-1. 文件开头是 CASEVO JavaScript 注释，没有 “Skip to content”。
-2. 文件中不存在 “Skip to content” 文本。
-3. 已重新运行 node --check，结果 PASS。
-
-附件文件名：CASEVO-worker-v4.1.3-clean.js
-
-请用这个附件完整替换 GitHub CASEVO 仓库里的 worker.js，不要复制网页中的代码文字。替换后 Commit changes，等待 Cloudflare 自动部署。
-
-部署后访问 https://getcasevo.com/api/health，应该看到 version 4.1.3。
-
-— ChatGPT
-
- One attachment
-  •  Scanned by Gmail
-Anti-virus warning – 1 attachment contains a virus or blocked file. Downloading this attachment is disabled.
-
-Mail Delivery Subsystem <mailer-daemon@googlemail.com>
-10:05 PM (0 minutes ago)
-to me
-
-For security reasons, Gmail does not allow you to use this type of file as it violates Google policy for executables and archives.
 /**
  * CASEVO AI SOURCING ENGINE
- * Version 4.1.3 — Verified Identity Sync
+ * Version 4.1.2 — Compatibility & Trust Fix
  *
  * GET  /api/health
  * POST /api/sourcing
@@ -50,7 +9,7 @@ For security reasons, Gmail does not allow you to use this type of file as it vi
  * Required secret: TAVILY_API_KEY
  */
 
-const VERSION = "4.1.3";
+const VERSION = "4.1.2";
 const TAVILY_ENDPOINT = "https://api.tavily.com/search";
 const SEARCH_TIMEOUT_MS = 15000;
 const RESULTS_PER_QUERY = 10;
@@ -2983,11 +2942,7 @@ function isBadCompanyNameCandidate(
       "private label manufacturer",
       "private label shoes manufacturer",
       "private label manufacturers shoes leather goods",
-      "custom mens formal leather shoes manufacturer",
-      "oem & odm footwear",
-      "oem/odm footwear",
-      "filter by organisation",
-      "filter by organization"
+      "custom mens formal leather shoes manufacturer"
     ]);
 
   if (
@@ -3005,31 +2960,6 @@ function isBadCompanyNameCandidate(
     NON_IDENTITY_RE.test(
       name
     )
-  ) {
-    return true;
-  }
-
-  // v4.1.3 Verified Identity Sync:
-  // Never promote UI labels, capability headings or SEO product titles
-  // into the supplier identity field.
-  if (
-    /^(?:filter\s+by|sort\s+by|view\s+all|show\s+all|load\s+more)\b/i.test(name) &&
-    !COMPANY_SUFFIX_RE.test(name)
-  ) {
-    return true;
-  }
-
-  if (
-    /\b(?:oem\s*(?:&|\/|and)?\s*odm|odm\s*(?:&|\/|and)?\s*oem)\b/i.test(name) &&
-    /\b(?:footwear|shoes?|production|manufactur(?:e|er|ing)|factory|supplier)\b/i.test(name) &&
-    !COMPANY_SUFFIX_RE.test(name)
-  ) {
-    return true;
-  }
-
-  if (
-    /\b(?:shoe|shoes|footwear)\s+production\s+by\b/i.test(name) &&
-    !COMPANY_SUFFIX_RE.test(name)
   ) {
     return true;
   }
@@ -4800,5 +4730,3 @@ function jsonResponse(
     }
   );
 }
-CASEVO-worker-v4.1.3-clean.js
-Displaying CASEVO-worker-v4.1.3-clean.js.
