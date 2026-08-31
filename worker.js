@@ -1,25 +1,32 @@
-
+None selected 
 
 Skip to content
 Using Gmail with screen readers
 Enable desktop notifications for Gmail.
    OK  No thanks
-1 of 8
-CASEVO worker.js v4.1.3
+1 of 9
+CASEVO worker.js v4.1.3 CLEAN — 请使用这个附件
 Inbox
 
 郑永彬 <zyb2155@gmail.com>
 Attachments
-9:46 PM (4 minutes ago)
+10:05 PM (0 minutes ago)
 to me
 
 你好，
 
-附件是 CASEVO 的 worker.js v4.1.3 代码文件。
+这是重新检查过的 CASEVO worker.js v4.1.3 CLEAN 版本。
 
-我已重新执行 JavaScript 语法检查（node --check），文件通过语法检查。
+我已经确认：
+1. 文件开头是 CASEVO JavaScript 注释，没有 “Skip to content”。
+2. 文件中不存在 “Skip to content” 文本。
+3. 已重新运行 node --check，结果 PASS。
 
-请下载附件后，将 GitHub CASEVO 仓库中的 worker.js 替换为该文件内容，再提交并让 Cloudflare 部署。
+附件文件名：CASEVO-worker-v4.1.3-clean.js
+
+请用这个附件完整替换 GitHub CASEVO 仓库里的 worker.js，不要复制网页中的代码文字。替换后 Commit changes，等待 Cloudflare 自动部署。
+
+部署后访问 https://getcasevo.com/api/health，应该看到 version 4.1.3。
 
 — ChatGPT
 
@@ -28,7 +35,7 @@ to me
 Anti-virus warning – 1 attachment contains a virus or blocked file. Downloading this attachment is disabled.
 
 Mail Delivery Subsystem <mailer-daemon@googlemail.com>
-9:46 PM (4 minutes ago)
+10:05 PM (0 minutes ago)
 to me
 
 For security reasons, Gmail does not allow you to use this type of file as it violates Google policy for executables and archives.
@@ -4793,5 +4800,5 @@ function jsonResponse(
     }
   );
 }
-worker_v4.1.3.js
-Displaying worker_v4.1.3.js.
+CASEVO-worker-v4.1.3-clean.js
+Displaying CASEVO-worker-v4.1.3-clean.js.
