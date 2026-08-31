@@ -10,7 +10,7 @@ Inbox
 
 郑永彬 <zyb2155@gmail.com>
 Attachments
-9:46 PM (1 minute ago)
+9:46 PM (4 minutes ago)
 to me
 
 你好，
@@ -28,7 +28,7 @@ to me
 Anti-virus warning – 1 attachment contains a virus or blocked file. Downloading this attachment is disabled.
 
 Mail Delivery Subsystem <mailer-daemon@googlemail.com>
-9:46 PM (1 minute ago)
+9:46 PM (4 minutes ago)
 to me
 
 For security reasons, Gmail does not allow you to use this type of file as it violates Google policy for executables and archives.
