@@ -1,26 +1,16 @@
 /**
  * CASEVO AI SOURCING ENGINE
- * Strict Real Company Filter
- * Version: 4.0.3
+ * Version 4.1.0 — Human Verification Engine
  *
  * GET  /api/health
  * POST /api/sourcing
+ * POST /api/verify-supplier
  *
  * Required secret: TAVILY_API_KEY
- *
- * Frontend compatibility:
- *   data.brief
- *   data.analysis.normalized
- *   data.analysis.scoring
- *   data.analysis.matches
- *   data.matches
  */
 
-const VERSION = "4.0.3";
-
-const TAVILY_ENDPOINT =
-  "https://api.tavily.com/search";
-
+const VERSION = "4.1.0";
+const TAVILY_ENDPOINT = "https://api.tavily.com/search";
 const SEARCH_TIMEOUT_MS = 15000;
 
 const RESULTS_PER_QUERY = 10;
@@ -31,11 +21,6 @@ const MAX_INPUT_LENGTH = 5000;
 const MAX_QUERY_LENGTH = 390;
 const MAX_CAPABILITY_LENGTH = 440;
 const MAX_EVIDENCE_LENGTH = 700;
-
-
-/* ============================================================
-   EXCLUDED SOURCES
-   ============================================================ */
 
 const EXCLUDED_DOMAINS = [
   "facebook.com",
@@ -79,11 +64,6 @@ const EXCLUDED_TLDS = [
   ".gov",
   ".edu"
 ];
-
-
-/* ============================================================
-   LOW-VALUE CONTENT
-   ============================================================ */
 
 const LOW_VALUE_TITLE_TERMS = [
   "top 5",
@@ -137,9 +117,7 @@ const LOW_VALUE_TITLE_TERMS = [
 
   "laser engraving on leather",
   "laser engraving leather",
-
   "premium leather shoes",
-
   "complete guide"
 ];
 
@@ -164,11 +142,6 @@ const LOW_VALUE_PATHS = [
   "/review/",
   "/reviews/"
 ];
-
-
-/* ============================================================
-   SUPPLIER SIGNALS
-   ============================================================ */
 
 const MANUFACTURER_SIGNALS = [
   "manufacturer",
@@ -232,6 +205,31 @@ const COMPANY_SIGNALS = [
   "registered office"
 ];
 
+const CHINA_SIGNALS = [
+  "china",
+  "chinese",
+
+  "guangdong",
+  "guangzhou",
+  "dongguan",
+  "foshan",
+  "shenzhen",
+
+  "zhejiang",
+  "wenzhou",
+  "yiwu",
+
+  "fujian",
+  "quanzhou",
+  "jinjiang",
+  "putian",
+
+  "chengdu",
+  "jiangsu",
+  "sichuan",
+  "hebei"
+];
+
 const COMPANY_SUFFIX_RE =
   /\b(?:co\.?\s*,?\s*ltd\.?|company\s+limited|ltd\.?|limited|inc\.?|corporation|corp\.?|llc)\b/i;
 
@@ -262,39 +260,8 @@ const GENERIC_TITLE_TERMS = [
   "premium leather shoes",
 
   "custom business casual shoes manufacturer",
-
   "reliable leather shoes manufacturer"
 ];
-
-const CHINA_SIGNALS = [
-  "china",
-  "chinese",
-
-  "guangdong",
-  "guangzhou",
-  "dongguan",
-  "foshan",
-  "shenzhen",
-
-  "zhejiang",
-  "wenzhou",
-  "yiwu",
-
-  "fujian",
-  "quanzhou",
-  "jinjiang",
-  "putian",
-
-  "chengdu",
-  "jiangsu",
-  "sichuan",
-  "hebei"
-];
-
-
-/* ============================================================
-   CERTIFICATIONS
-   ============================================================ */
 
 const CERTIFICATION_RULES = [
   ["ISO 9001", /\biso\s*9001\b/i],
@@ -311,11 +278,6 @@ const CERTIFICATION_RULES = [
   ["FSC", /\bfsc\b/i],
   ["WRAP", /\bwrap\b/i]
 ];
-
-
-/* ============================================================
-   PRODUCT TERMS
-   ============================================================ */
 
 const PRODUCT_TERMS = [
   [
@@ -393,11 +355,6 @@ const PRODUCT_TERMS = [
   ["鞋", "Footwear"]
 ];
 
-
-/* ============================================================
-   DESTINATIONS
-   ============================================================ */
-
 const DESTINATION_RULES = [
   ["united states", "United States"],
   ["u.s.a.", "United States"],
@@ -459,11 +416,6 @@ const DESTINATION_RULES = [
   ["巴西", "Brazil"]
 ];
 
-
-/* ============================================================
-   LOCATIONS
-   ============================================================ */
-
 const LOCATION_RULES = [
   ["Guangzhou, China", ["guangzhou"]],
   ["Dongguan, China", ["dongguan"]],
@@ -504,7 +456,7 @@ const LOCATION_RULES = [
 
 
 /* ============================================================
-   WORKER ENTRY
+   MAIN WORKER
    ============================================================ */
 
 export default {
@@ -562,7 +514,7 @@ export default {
           VERSION,
 
         engine:
-          "CASEVO Real Supplier Discovery",
+          "CASEVO Real Supplier Discovery + Human Verification",
 
         searchProvider:
           "Tavily",
@@ -575,7 +527,6 @@ export default {
         timestamp:
           new Date()
             .toISOString()
-
       });
     }
 
@@ -608,6 +559,40 @@ export default {
 
 
       return handleSourcingRequest(
+        request,
+        env
+      );
+    }
+
+
+    /* --------------------------------------------------------
+       HUMAN VERIFICATION
+       -------------------------------------------------------- */
+
+    if (
+      url.pathname ===
+      "/api/verify-supplier"
+    ) {
+
+      if (
+        request.method !==
+        "POST"
+      ) {
+
+        return jsonResponse(
+          {
+            ok:
+              false,
+
+            error:
+              "Method not allowed. Use POST /api/verify-supplier."
+          },
+          405
+        );
+      }
+
+
+      return handleSupplierVerification(
         request,
         env
       );
@@ -914,6 +899,1110 @@ async function handleSourcingRequest(
 
 
 /* ============================================================
+   HUMAN VERIFICATION REQUEST
+   ============================================================ */
+
+async function handleSupplierVerification(
+  request,
+  env
+) {
+
+  let body;
+
+
+  try {
+
+    body =
+      await request.json();
+
+  } catch {
+
+    return jsonResponse(
+      {
+        ok:
+          false,
+
+        error:
+          "Invalid JSON request body."
+      },
+      400
+    );
+  }
+
+
+  if (
+    !env.TAVILY_API_KEY
+  ) {
+
+    return jsonResponse(
+      {
+        ok:
+          false,
+
+        error:
+          "TAVILY_API_KEY is not configured in Cloudflare Worker secrets."
+      },
+      500
+    );
+  }
+
+
+  const supplier =
+    body?.supplier ||
+    {};
+
+
+  const name =
+    clean(
+      supplier.name ??
+      supplier.companyName ??
+      body?.name
+    );
+
+
+  const website =
+    normalizeUrl(
+      supplier.website ??
+      body?.website
+    );
+
+
+  const sourceUrl =
+    normalizeUrl(
+      supplier.sourceUrl ??
+      body?.sourceUrl
+    );
+
+
+  const domain =
+    clean(
+      supplier.domain
+    ) ||
+    getDomain(
+      website ||
+      sourceUrl
+    );
+
+
+  const product =
+    clean(
+      body?.product ??
+      body?.requirement ??
+      body?.brief ??
+      ""
+    );
+
+
+  if (
+    !name &&
+    !domain &&
+    !website
+  ) {
+
+    return jsonResponse(
+      {
+        ok:
+          false,
+
+        error:
+          "A supplier name or website is required for verification."
+      },
+      400
+    );
+  }
+
+
+  try {
+
+    const queries =
+      buildVerificationQueries({
+        name,
+        domain,
+        product
+      });
+
+
+    const responses =
+      await Promise.allSettled(
+
+        queries.map(
+          query =>
+            tavilySearch(
+              query,
+              env.TAVILY_API_KEY
+            )
+        )
+
+      );
+
+
+    const successful =
+      responses.filter(
+        item =>
+          item.status ===
+          "fulfilled"
+      );
+
+
+    if (
+      !successful.length
+    ) {
+
+      const failure =
+        responses.find(
+          item =>
+            item.status ===
+            "rejected"
+        );
+
+
+      throw new Error(
+        failure?.reason?.message ||
+        "Supplier verification searches failed."
+      );
+    }
+
+
+    const rawResults =
+      successful.flatMap(
+
+        item =>
+          (
+            item.value?.results ||
+            []
+          ).map(
+            result => ({
+              ...result,
+
+              _query:
+                item.value._query
+            })
+          )
+
+      );
+
+
+    const results =
+      deduplicateVerificationResults(
+        rawResults
+      );
+
+
+    const evidence =
+      buildVerificationEvidence(
+        results,
+        {
+          name,
+          domain,
+          website,
+          product
+        }
+      );
+
+
+    return jsonResponse({
+
+      ok:
+        true,
+
+      requestId:
+        createRequestId(),
+
+      message:
+        "CASEVO supplier verification research completed.",
+
+
+      supplier: {
+
+        name:
+          name ||
+          evidence.companyName ||
+          companyNameFromDomain(
+            domain
+          ),
+
+        website:
+          website ||
+          (
+            domain
+              ? `https://${domain}`
+              : ""
+          ),
+
+        domain:
+          domain ||
+          evidence.domain ||
+          "",
+
+        location:
+          evidence.location,
+
+        contactEmail:
+          evidence.email,
+
+        contactPhone:
+          evidence.phone,
+
+        supplierType:
+          evidence.supplierType,
+
+        certifications:
+          evidence.certifications,
+
+        moq:
+          evidence.moq,
+
+        exportCapability:
+          evidence.exportCapability,
+
+        manufacturingCapability:
+          evidence.manufacturingCapability,
+
+        oemOdm:
+          evidence.oemOdm
+      },
+
+
+      verification: {
+
+        score:
+          evidence.score,
+
+        status:
+          evidence.status,
+
+        companyIdentity:
+          evidence.companyIdentity,
+
+        officialWebsite:
+          evidence.officialWebsite,
+
+        manufacturingCapability:
+          evidence.manufacturingCapability,
+
+        oemOdm:
+          evidence.oemOdm,
+
+        moq:
+          evidence.moq ||
+          "Not confirmed",
+
+        certifications:
+          evidence.certifications.length
+            ? evidence.certifications
+            : ["Not confirmed"],
+
+        exportCapability:
+          evidence.exportCapability,
+
+        contact:
+          evidence.email ||
+          evidence.phone
+            ? "Public contact evidence found"
+            : "Not confirmed",
+
+        location:
+          evidence.location,
+
+        signals:
+          evidence.signals,
+
+        summary:
+          evidence.summary
+      },
+
+
+      evidence:
+        evidence.items,
+
+
+      meta: {
+
+        source:
+          "CASEVO Human Verification Engine",
+
+        publicWebOnly:
+          true,
+
+        verified:
+          false,
+
+        disclaimer:
+          "This is public-web verification research, not final commercial or legal verification. Company identity, bank details, certifications, production capability, samples, MOQ and commercial terms should be independently confirmed before placing an order.",
+
+        searchQueries:
+          queries,
+
+        resultsScanned:
+          results.length,
+
+        timestamp:
+          new Date()
+            .toISOString()
+      }
+
+    });
+
+  } catch (
+    error
+  ) {
+
+    console.error(
+      "CASEVO verification error:",
+      error
+    );
+
+
+    return jsonResponse(
+      {
+        ok:
+          false,
+
+        error:
+          "Supplier verification research failed.",
+
+        details:
+          clean(
+            error?.message ||
+            "Unknown verification error."
+          )
+      },
+      502
+    );
+  }
+}
+
+
+/* ============================================================
+   VERIFICATION QUERIES
+   ============================================================ */
+
+function buildVerificationQueries({
+  name,
+  domain,
+  product
+}) {
+
+  const identity =
+    clean(
+      name ||
+      domain ||
+      "supplier"
+    )
+      .slice(
+        0,
+        160
+      );
+
+
+  const productText =
+    clean(
+      product
+    )
+      .slice(
+        0,
+        120
+      );
+
+
+  const domainHint =
+    domain
+      ? ` site:${domain}`
+      : "";
+
+
+  return unique([
+    `"${identity}" official company about factory contact${domainHint}`,
+
+    `"${identity}" manufacturer OEM ODM factory certification MOQ${domainHint}`,
+
+    `"${identity}" export contact email phone address${domainHint}`,
+
+    productText
+      ? `"${identity}" "${productText}" manufacturer factory${domainHint}`
+      : ""
+  ])
+    .filter(Boolean)
+    .slice(
+      0,
+      4
+    )
+    .map(
+      query =>
+        query.slice(
+          0,
+          MAX_QUERY_LENGTH
+        )
+    );
+}
+
+
+/* ============================================================
+   VERIFICATION RESULT DEDUPLICATION
+   ============================================================ */
+
+function deduplicateVerificationResults(
+  results
+) {
+
+  const seen =
+    new Set();
+
+
+  const output = [];
+
+
+  for (
+    const result
+    of results
+  ) {
+
+    const url =
+      normalizeUrl(
+        result?.url
+      );
+
+
+    if (
+      !url ||
+      seen.has(
+        url
+      )
+    ) {
+
+      continue;
+    }
+
+
+    const domain =
+      getDomain(
+        url
+      );
+
+
+    if (
+      !domain ||
+      isExcludedDomain(
+        domain
+      )
+    ) {
+
+      continue;
+    }
+
+
+    seen.add(
+      url
+    );
+
+
+    output.push({
+      ...result,
+      url
+    });
+  }
+
+
+  return output.slice(
+    0,
+    20
+  );
+}
+
+
+/* ============================================================
+   VERIFICATION EVIDENCE
+   ============================================================ */
+
+function buildVerificationEvidence(
+  results,
+  target
+) {
+
+  const targetDomain =
+    clean(
+      target.domain ||
+      getDomain(
+        target.website
+      )
+    );
+
+
+  const targetName =
+    clean(
+      target.name
+    )
+      .toLowerCase();
+
+
+  const related =
+    results.filter(
+      result => {
+
+        const domain =
+          getDomain(
+            result.url
+          );
+
+
+        const text =
+          `${clean(
+            result.title
+          )} ${clean(
+            result.content ||
+            result.raw_content ||
+            ""
+          )}`
+            .toLowerCase();
+
+
+        return (
+          (
+            targetDomain &&
+            domain ===
+              targetDomain
+          )
+          ||
+          (
+            targetName &&
+            text.includes(
+              targetName
+            )
+          )
+        );
+      }
+    );
+
+
+  const pool =
+    related.length
+      ? related
+      : results;
+
+
+  const combined =
+    sanitizeWebText(
+
+      pool.map(
+        result =>
+          `${result.title || ""}. ${result.content || ""} ${result.raw_content || ""}`
+      )
+        .join(" ")
+
+    );
+
+
+  const lower =
+    combined
+      .toLowerCase();
+
+
+  const legalName =
+    extractLegalCompanyName(
+      combined
+    );
+
+
+  const contentName =
+    extractCompanyNameFromContent(
+      combined
+    );
+
+
+  const companyName =
+    legalName ||
+    contentName ||
+    clean(
+      target.name
+    ) ||
+    companyNameFromDomain(
+      targetDomain
+    );
+
+
+  const location =
+    inferLocation({
+      title:
+        companyName,
+
+      content:
+        combined,
+
+      url:
+        target.website ||
+        pool[0]?.url ||
+        ""
+    });
+
+
+  const certifications =
+    extractCertifications({
+      title:
+        companyName,
+
+      content:
+        combined,
+
+      raw_content:
+        ""
+    });
+
+
+  const moq =
+    extractMOQ({
+      content:
+        combined,
+
+      raw_content:
+        ""
+    });
+
+
+  const email =
+    extractEmail(
+      combined
+    );
+
+
+  const phone =
+    extractPhone(
+      combined
+    );
+
+
+  const manufacturingCount =
+    countSignals(
+      lower,
+      MANUFACTURER_SIGNALS
+    );
+
+
+  const companyCount =
+    countSignals(
+      lower,
+      COMPANY_SIGNALS
+    );
+
+
+  const oemOdmFound =
+    /\boem\b|\bodm\b|private label/i
+      .test(
+        combined
+      );
+
+
+  const exportFound =
+    /exporter|exporting|export market|overseas market|international market/i
+      .test(
+        combined
+      );
+
+
+  const domainMatchCount =
+    targetDomain
+
+      ? pool.filter(
+          result =>
+            getDomain(
+              result.url
+            ) ===
+            targetDomain
+        ).length
+
+      : 0;
+
+
+  const independentPages =
+    new Set(
+
+      pool.map(
+        result =>
+          getDomain(
+            result.url
+          )
+      )
+        .filter(
+          Boolean
+        )
+
+    ).size;
+
+
+  let score = 0;
+
+  const signals = [];
+
+
+  if (
+    legalName
+  ) {
+
+    score += 18;
+
+    signals.push(
+      "Legal company-name signal"
+    );
+
+  } else if (
+    contentName
+  ) {
+
+    score += 12;
+
+    signals.push(
+      "Company identity signal"
+    );
+  }
+
+
+  if (
+    targetDomain &&
+    domainMatchCount >= 1
+  ) {
+
+    score += 15;
+
+    signals.push(
+      "Official-domain evidence"
+    );
+  }
+
+
+  if (
+    manufacturingCount >= 1
+  ) {
+
+    score += 20;
+
+    signals.push(
+      "Manufacturing evidence"
+    );
+  }
+
+
+  if (
+    oemOdmFound
+  ) {
+
+    score += 10;
+
+    signals.push(
+      "OEM / ODM evidence"
+    );
+  }
+
+
+  if (
+    exportFound
+  ) {
+
+    score += 8;
+
+    signals.push(
+      "Export capability evidence"
+    );
+  }
+
+
+  if (
+    certifications.length
+  ) {
+
+    score += 10;
+
+    signals.push(
+      "Certification evidence"
+    );
+  }
+
+
+  if (
+    moq
+  ) {
+
+    score += 5;
+
+    signals.push(
+      "MOQ evidence"
+    );
+  }
+
+
+  if (
+    email
+  ) {
+
+    score += 5;
+
+    signals.push(
+      "Email evidence"
+    );
+  }
+
+
+  if (
+    phone
+  ) {
+
+    score += 4;
+
+    signals.push(
+      "Phone evidence"
+    );
+  }
+
+
+  if (
+    location !==
+    "Not determined"
+  ) {
+
+    score += 3;
+
+    signals.push(
+      "Location evidence"
+    );
+  }
+
+
+  if (
+    companyCount >= 1
+  ) {
+
+    score += 2;
+  }
+
+
+  if (
+    independentPages >= 2
+  ) {
+
+    score += 5;
+
+    signals.push(
+      "Multiple public-web sources"
+    );
+  }
+
+
+  score =
+    Math.min(
+      100,
+      score
+    );
+
+
+  let status =
+    "Insufficient public-web evidence — manual review required";
+
+
+  if (
+    score >= 80
+  ) {
+
+    status =
+      "Strong public-web signals — final commercial verification required";
+
+  } else if (
+    score >= 60
+  ) {
+
+    status =
+      "Moderate public-web signals — further verification required";
+  }
+
+
+  const companyIdentity =
+    legalName ||
+    contentName
+
+      ? "Strong evidence"
+
+      : companyName
+
+        ? "Partial evidence"
+
+        : "Not confirmed";
+
+
+  const officialWebsite =
+    targetDomain &&
+    domainMatchCount >= 1
+
+      ? "Public-web evidence found"
+
+      : target.website
+
+        ? "Provided website — not independently confirmed"
+
+        : "Not confirmed";
+
+
+  const manufacturingCapability =
+    manufacturingCount >= 2
+
+      ? "Strong evidence"
+
+      : manufacturingCount === 1
+
+        ? "Evidence found"
+
+        : "Not confirmed";
+
+
+  const oemOdm =
+    oemOdmFound
+
+      ? "Evidence found"
+
+      : "Not confirmed";
+
+
+  const exportCapability =
+    exportFound
+
+      ? "Evidence found"
+
+      : "Not confirmed";
+
+
+  const supplierType =
+    detectSupplierType({
+      title:
+        companyName,
+
+      content:
+        combined
+    });
+
+
+  const items =
+    pool.slice(
+      0,
+      8
+    )
+      .map(
+        item => ({
+
+          title:
+            truncate(
+              sanitizeWebText(
+                item.title
+              ),
+              140
+            ),
+
+          url:
+            normalizeUrl(
+              item.url
+            ),
+
+          domain:
+            getDomain(
+              item.url
+            ),
+
+          evidence:
+            truncate(
+
+              extractRelevantEvidence(
+
+                `${item.title || ""}. ${item.content || ""} ${item.raw_content || ""}`,
+
+                target.product ||
+                companyName
+
+              ),
+
+              320
+            )
+
+        })
+      );
+
+
+  const summaryParts = [
+
+    companyIdentity !==
+      "Not confirmed"
+
+      ? "Company identity signals were found."
+
+      : "Company identity could not be strongly confirmed.",
+
+
+    manufacturingCapability !==
+      "Not confirmed"
+
+      ? "Manufacturing capability evidence was found."
+
+      : "Manufacturing capability was not confirmed.",
+
+
+    oemOdmFound
+
+      ? "OEM/ODM capability is referenced publicly."
+
+      : "OEM/ODM capability was not confirmed.",
+
+
+    certifications.length
+
+      ? `Public references mention ${certifications.join(", ")}.`
+
+      : "No certification was confirmed from the retrieved evidence."
+  ];
+
+
+  return {
+
+    score,
+
+    status,
+
+    signals:
+      unique(
+        signals
+      ),
+
+    companyName,
+
+    domain:
+      targetDomain,
+
+    location,
+
+    email,
+
+    phone,
+
+    certifications,
+
+    moq,
+
+    companyIdentity,
+
+    officialWebsite,
+
+    manufacturingCapability,
+
+    oemOdm,
+
+    exportCapability,
+
+    supplierType,
+
+    summary:
+      summaryParts.join(
+        " "
+      ),
+
+    items
+  };
+}
+
+
+/* ============================================================
    REQUIREMENT NORMALIZATION
    ============================================================ */
 
@@ -1215,7 +2304,7 @@ function normalizeRequirement(
 
 
 /* ============================================================
-   SEARCH
+   SUPPLIER SEARCH
    ============================================================ */
 
 async function searchSuppliersWithTavily(
@@ -1398,7 +2487,7 @@ function buildSearchQueries(
 
 
 /* ============================================================
-   TAVILY REQUEST
+   TAVILY
    ============================================================ */
 
 async function tavilySearch(
@@ -1424,10 +2513,12 @@ async function tavilySearch(
       await fetch(
         TAVILY_ENDPOINT,
         {
+
           method:
             "POST",
 
           headers: {
+
             "Content-Type":
               "application/json",
 
@@ -1527,7 +2618,7 @@ async function tavilySearch(
 
 
 /* ============================================================
-   DOMAIN DEDUPLICATION
+   DISCOVERY DEDUPLICATION
    ============================================================ */
 
 function deduplicateResults(
@@ -1604,7 +2695,7 @@ function deduplicateResults(
 
 
 /* ============================================================
-   SUPPLIER NORMALIZATION
+   DISCOVERY NORMALIZATION
    ============================================================ */
 
 function normalizeSupplierResults(
@@ -1651,10 +2742,6 @@ function normalizeSupplierResults(
     }
 
 
-    /*
-     * STRICT COMPANY GATE
-     */
-
     const gate =
       evaluateRealCompanyGate(
         result,
@@ -1669,10 +2756,6 @@ function normalizeSupplierResults(
       continue;
     }
 
-
-    /*
-     * STRICT COMPANY NAME
-     */
 
     const companyName =
       extractTrustedCompanyName(
@@ -1690,10 +2773,6 @@ function normalizeSupplierResults(
     }
 
 
-    /*
-     * MATCH SCORE
-     */
-
     const matchScore =
       calculateMatchScore(
         result,
@@ -1710,17 +2789,22 @@ function normalizeSupplierResults(
 
 
     const verification =
-      calculateVerification(
+      calculateDiscoveryVerification(
         result,
         gate
       );
 
 
     candidates.push({
+
       result,
+
       domain,
+
       companyName,
+
       matchScore,
+
       verification,
 
       supplierType:
@@ -1892,16 +2976,6 @@ function evaluateRealCompanyGate(
     );
 
 
-  /*
-   * STRICT RULE:
-   *
-   * Must be:
-   * - independent domain
-   * - manufacturing evidence
-   * - at least 3 real-company signals
-   * - real identity OR brand-domain + company page
-   */
-
   const pass =
     independentDomain &&
     manufacturingSignal &&
@@ -1916,17 +2990,25 @@ function evaluateRealCompanyGate(
 
 
   return {
+
     pass,
+
     evidenceCount,
 
     legalName,
+
     titleCompany,
+
     contentCompany,
+
     brandDomain,
 
     manufacturingSignal,
+
     companyPageSignal,
+
     commercialSignal,
+
     independentDomain
   };
 }
@@ -2094,10 +3176,10 @@ function buildSupplierRecord(
 
 
 /* ============================================================
-   VERIFICATION
+   DISCOVERY VERIFICATION
    ============================================================ */
 
-function calculateVerification(
+function calculateDiscoveryVerification(
   result,
   gate
 ) {
@@ -2269,6 +3351,7 @@ function calculateVerification(
 
 
   return {
+
     score,
 
     status,
@@ -2696,7 +3779,8 @@ function detectSupplierType(
       result?.title
     )} ${clean(
       result?.content ||
-      result?.raw_content
+      result?.raw_content ||
+      ""
     )}`
       .toLowerCase();
 
@@ -3100,22 +4184,18 @@ function cleanCompanyCandidate(
 
   text =
     text
-
       .replace(
         /\s*[|–—-]\s*(official website|official site|home|homepage)$/i,
         ""
       )
-
       .replace(
         /^\s*(manufacturer|factory|supplier)\s*[|:–—-]\s*/i,
         ""
       )
-
       .replace(
         /\s+/g,
         " "
       )
-
       .trim();
 
 
@@ -3282,18 +4362,15 @@ function companyNameFromDomain(
 
 
   return first
-
     .replace(
       /[-_]+/g,
       " "
     )
-
     .replace(
       /\b\w/g,
       char =>
         char.toUpperCase()
     )
-
     .trim();
 }
 
@@ -3596,17 +4673,14 @@ function extractRelevantEvidence(
   return unique(
 
     ranked
-
       .filter(
         item =>
           item.score > 0
       )
-
       .slice(
         0,
         4
       )
-
       .map(
         item =>
           item.sentence
@@ -3678,7 +4752,6 @@ function extractEmail(
     unique(
 
       matches
-
         .map(
           email =>
             clean(
@@ -3686,7 +4759,6 @@ function extractEmail(
             )
               .toLowerCase()
         )
-
         .filter(
           email =>
             !/example\.com$|domain\.com$|email\.com$|wixpress\.com$/
@@ -3779,7 +4851,8 @@ function inferLocation(
       result?.title
     )} ${clean(
       result?.content ||
-      result?.raw_content
+      result?.raw_content ||
+      ""
     )} ${clean(
       result?.url
     )}`
@@ -4063,7 +5136,7 @@ function extractDestination(
 
 
 /* ============================================================
-   WEB TEXT SANITIZATION
+   SANITIZE WEB TEXT
    ============================================================ */
 
 function sanitizeWebText(
