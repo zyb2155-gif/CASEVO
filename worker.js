@@ -1,3 +1,37 @@
+
+
+Skip to content
+Using Gmail with screen readers
+Enable desktop notifications for Gmail.
+   OK  No thanks
+1 of 8
+CASEVO worker.js v4.1.3
+Inbox
+
+郑永彬 <zyb2155@gmail.com>
+Attachments
+9:46 PM (1 minute ago)
+to me
+
+你好，
+
+附件是 CASEVO 的 worker.js v4.1.3 代码文件。
+
+我已重新执行 JavaScript 语法检查（node --check），文件通过语法检查。
+
+请下载附件后，将 GitHub CASEVO 仓库中的 worker.js 替换为该文件内容，再提交并让 Cloudflare 部署。
+
+— ChatGPT
+
+ One attachment
+  •  Scanned by Gmail
+Anti-virus warning – 1 attachment contains a virus or blocked file. Downloading this attachment is disabled.
+
+Mail Delivery Subsystem <mailer-daemon@googlemail.com>
+9:46 PM (1 minute ago)
+to me
+
+For security reasons, Gmail does not allow you to use this type of file as it violates Google policy for executables and archives.
 /**
  * CASEVO AI SOURCING ENGINE
  * Version 4.1.3 — Verified Identity Sync
@@ -2287,6 +2321,10 @@ function buildSupplierRecord(
         result
       ),
 
+    // v4.1.2 Trust Lock:
+    // discovery cards only surface contact details
+    // after company identity has at least been confirmed
+    // by the discovery identity layer.
     contactEmail:
       candidate.companyName !==
       UNKNOWN_COMPANY
@@ -2477,7 +2515,9 @@ function calculateDiscoveryVerification(
     signals:
       unique(signals)
   };
-}function isLowValuePage(
+}
+
+function isLowValuePage(
   result
 ) {
   const title =
@@ -2962,6 +3002,9 @@ function isBadCompanyNameCandidate(
     return true;
   }
 
+  // v4.1.3 Verified Identity Sync:
+  // Never promote UI labels, capability headings or SEO product titles
+  // into the supplier identity field.
   if (
     /^(?:filter\s+by|sort\s+by|view\s+all|show\s+all|load\s+more)\b/i.test(name) &&
     !COMPANY_SUFFIX_RE.test(name)
@@ -3588,3 +3631,1167 @@ function extractRelevantEvidence(
               COMMERCIAL_SIGNALS
             ) *
             2;
+
+          score +=
+            countSignals(
+              lower,
+              COMPANY_SIGNALS
+            );
+
+          for (
+            const token of productTokens
+          ) {
+            if (
+              lower.includes(
+                token
+              )
+            ) {
+              score +=
+                2;
+            }
+          }
+
+          return {
+            sentence,
+            score,
+            index
+          };
+        }
+      )
+      .sort(
+        (
+          a,
+          b
+        ) =>
+          b.score -
+          a.score ||
+          a.index -
+          b.index
+      );
+
+  const selected =
+    ranked
+      .filter(
+        item =>
+          item.score > 0
+      )
+      .slice(
+        0,
+        3
+      )
+      .map(
+        item =>
+          item.sentence
+      );
+
+  const output =
+    selected.length
+      ? selected.join(" ")
+      : value;
+
+  return truncate(
+    output,
+    MAX_EVIDENCE_LENGTH
+  );
+}
+
+function extractContactInfo(
+  result
+) {
+  const text =
+    `${result?.title || ""} ${result?.content || ""} ${result?.raw_content || ""}`;
+
+  return {
+    email:
+      extractEmail(
+        text
+      ),
+
+    phone:
+      extractPhone(
+        text
+      )
+  };
+}
+
+function extractEmail(
+  text
+) {
+  const value =
+    clean(
+      text
+    );
+
+  const matches =
+    value.match(
+      /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/ig
+    );
+
+  if (
+    !matches?.length
+  ) {
+    return "";
+  }
+
+  const filtered =
+    matches.filter(
+      email =>
+        !/\.(?:png|jpg|jpeg|gif|svg|webp)$/i.test(
+          email
+        )
+    );
+
+  return (
+    filtered[0] ||
+    ""
+  );
+}
+
+function extractPhone(
+  text
+) {
+  const value =
+    clean(
+      text
+    );
+
+  const patterns = [
+    /(?:tel|telephone|phone|mobile|whatsapp)\s*[:：]?\s*(\+?\d[\d\s().-]{6,20}\d)/i,
+
+    /(\+86[\s-]?\d[\d\s-]{7,15}\d)/i
+  ];
+
+  for (
+    const pattern of patterns
+  ) {
+    const match =
+      value.match(
+        pattern
+      );
+
+    if (
+      match?.[1]
+    ) {
+      return clean(
+        match[1]
+      );
+    }
+  }
+
+  return "";
+}
+
+function extractCertifications(
+  result
+) {
+  const text =
+    clean(
+      `${result?.title || ""} ${result?.content || ""} ${result?.raw_content || ""}`
+    );
+
+  const certifications =
+    [];
+
+  for (
+    const [
+      label,
+      pattern
+    ] of CERTIFICATION_RULES
+  ) {
+    if (
+      pattern.test(
+        text
+      )
+    ) {
+      certifications.push(
+        label
+      );
+    }
+  }
+
+  return unique(
+    certifications
+  ).slice(
+    0,
+    8
+  );
+}
+
+function extractMOQ(
+  result
+) {
+  const text =
+    sanitizeWebText(
+      `${result?.content || ""} ${result?.raw_content || ""}`
+    );
+
+  const patterns = [
+    /\bmoq\s*[:：]?\s*(\d{1,3}(?:,\d{3})+|\d+)\s*(pairs?|pcs?|pieces?|units?|sets?|meters?|metres?|yards?|kg|kgs)?\b/i,
+
+    /\bminimum\s+order(?:\s+quantity)?\s*[:：]?\s*(\d{1,3}(?:,\d{3})+|\d+)\s*(pairs?|pcs?|pieces?|units?|sets?|meters?|metres?|yards?|kg|kgs)?\b/i
+  ];
+
+  for (
+    const pattern of patterns
+  ) {
+    const match =
+      text.match(
+        pattern
+      );
+
+    if (match) {
+      return clean(
+        `${match[1]} ${match[2] || ""}`
+      );
+    }
+  }
+
+  return "";
+}
+
+function inferLocation(
+  result
+) {
+  const text =
+    clean(
+      `${result?.title || ""} ${result?.content || ""} ${result?.url || ""}`
+    ).toLowerCase();
+
+  for (
+    const [
+      label,
+      terms
+    ] of LOCATION_RULES
+  ) {
+    if (
+      terms.some(
+        term =>
+          text.includes(
+            term
+          )
+      )
+    ) {
+      return label;
+    }
+  }
+
+  return "Not determined";
+}
+
+function detectSupplierType(
+  result
+) {
+  const text =
+    clean(
+      `${result?.title || ""} ${result?.content || ""}`
+    ).toLowerCase();
+
+  const hasManufacturer =
+    countSignals(
+      text,
+      MANUFACTURER_SIGNALS
+    ) > 0;
+
+  const hasExporter =
+    /\bexporter\b|\bexporting\b|\bexport\b/i.test(
+      text
+    );
+
+  const hasTrading =
+    /\btrading company\b|\btrader\b/i.test(
+      text
+    );
+
+  if (
+    hasManufacturer &&
+    hasExporter
+  ) {
+    return "Manufacturer / Exporter";
+  }
+
+  if (
+    hasManufacturer
+  ) {
+    return "Manufacturer";
+  }
+
+  if (
+    hasTrading
+  ) {
+    return "Trading company";
+  }
+
+  if (
+    hasExporter
+  ) {
+    return "Exporter";
+  }
+
+  return "Supplier candidate";
+}
+
+function isLowValueTitle(
+  title
+) {
+  const lower =
+    clean(
+      title
+    ).toLowerCase();
+
+  if (!lower) {
+    return true;
+  }
+
+  return LOW_VALUE_TITLE_TERMS.some(
+    term =>
+      lower.includes(
+        term
+      )
+  );
+}
+
+function isLowValuePath(
+  url
+) {
+  try {
+    const pathname =
+      new URL(
+        normalizeUrl(
+          url
+        )
+      ).pathname.toLowerCase();
+
+    return LOW_VALUE_PATHS.some(
+      path =>
+        pathname.includes(
+          path
+        )
+    );
+  } catch {
+    return true;
+  }
+}
+
+function isExcludedDomain(
+  domain
+) {
+  const value =
+    clean(
+      domain
+    )
+      .toLowerCase()
+      .replace(
+        /^www\./,
+        ""
+      );
+
+  if (!value) {
+    return true;
+  }
+
+  if (
+    value.endsWith(
+      ".gov"
+    ) ||
+    value.endsWith(
+      ".edu"
+    )
+  ) {
+    return true;
+  }
+
+  return EXCLUDED_DOMAINS.some(
+    blocked =>
+      value === blocked ||
+      value.endsWith(
+        `.${blocked}`
+      )
+  );
+}
+
+function normalizeRequirement({
+  requirement,
+  productInput,
+  quantityInput,
+  targetPriceInput,
+  destinationInput,
+  combined
+}) {
+  const product =
+    productInput ||
+    extractProduct(
+      combined
+    );
+
+  const quantity =
+    quantityInput ||
+    extractQuantity(
+      combined
+    );
+
+  const targetPrice =
+    targetPriceInput ||
+    extractPrice(
+      combined
+    );
+
+  const destination =
+    destinationInput ||
+    extractDestination(
+      combined
+    );
+
+  const requirements =
+    [];
+
+  const thickness =
+    combined.match(
+      /\b\d+(?:\.\d+)?\s*(?:mm|cm|inch|inches)\b/i
+    );
+
+  if (thickness) {
+    requirements.push(
+      `Thickness: ${clean(
+        thickness[0]
+      )}`
+    );
+  }
+
+  const lower =
+    combined.toLowerCase();
+
+  const colors = [
+    "black",
+    "white",
+    "brown",
+    "red",
+    "blue",
+    "green",
+    "navy",
+    "tan",
+    "beige",
+    "grey",
+    "gray",
+    "burgundy"
+  ];
+
+  const foundColors =
+    colors.filter(
+      color =>
+        lower.includes(
+          color
+        )
+    );
+
+  if (
+    foundColors.length
+  ) {
+    requirements.push(
+      `Color: ${foundColors.join(", ")}`
+    );
+  }
+
+  if (
+    /full[\s-]?grain/i.test(
+      combined
+    )
+  ) {
+    requirements.push(
+      "Leather grade: full-grain"
+    );
+  } else if (
+    /top[\s-]?grain/i.test(
+      combined
+    )
+  ) {
+    requirements.push(
+      "Leather grade: top-grain"
+    );
+  } else if (
+    /genuine leather/i.test(
+      combined
+    )
+  ) {
+    requirements.push(
+      "Material type: genuine leather"
+    );
+  }
+
+  const applications =
+    [];
+
+  if (
+    /shoe|sneaker|footwear/i.test(
+      combined
+    )
+  ) {
+    applications.push(
+      "footwear"
+    );
+  }
+
+  if (
+    /upper/i.test(
+      combined
+    )
+  ) {
+    applications.push(
+      "shoe upper"
+    );
+  }
+
+  if (
+    applications.length
+  ) {
+    requirements.push(
+      `Application: ${unique(
+        applications
+      ).join(", ")}`
+    );
+  }
+
+  if (
+    !requirements.length &&
+    requirement
+  ) {
+    requirements.push(
+      requirement
+    );
+  }
+
+  const tags =
+    unique([
+      product &&
+        "product specified",
+
+      quantity &&
+        "quantity specified",
+
+      targetPrice &&
+        "target price specified",
+
+      destination &&
+        "destination specified",
+
+      thickness &&
+        "thickness specified",
+
+      /full[\s-]?grain/i.test(
+        combined
+      ) &&
+        "full-grain",
+
+      /shoe|sneaker|footwear/i.test(
+        combined
+      ) &&
+        "footwear",
+
+      /upper/i.test(
+        combined
+      ) &&
+        "shoe upper"
+    ].filter(Boolean));
+
+  return {
+    requirement,
+    product,
+    quantity,
+    targetPrice,
+    destination,
+    requirements,
+    tags
+  };
+}
+
+function calculateReadiness(
+  analysis
+) {
+  const hasRequirement =
+    Boolean(
+      analysis.requirement
+    );
+
+  const hasProduct =
+    Boolean(
+      analysis.product
+    );
+
+  const hasQuantity =
+    Boolean(
+      analysis.quantity
+    );
+
+  const hasPrice =
+    Boolean(
+      analysis.targetPrice
+    );
+
+  const hasDestination =
+    Boolean(
+      analysis.destination
+    );
+
+  const hasSpecs =
+    analysis.requirements.length >= 3;
+
+  const clarity =
+    hasRequirement
+      ? 100
+      : 0;
+
+  const specification =
+    Math.round(
+      (
+        Number(hasProduct) +
+        Number(hasQuantity) +
+        Number(hasDestination) +
+        Number(hasSpecs)
+      ) /
+      4 *
+      100
+    );
+
+  const commercial =
+    Math.round(
+      (
+        Number(hasQuantity) +
+        Number(hasPrice) +
+        Number(hasDestination)
+      ) /
+      3 *
+      100
+    );
+
+  const score =
+    Math.round(
+      clarity *
+      0.35 +
+      specification *
+      0.40 +
+      commercial *
+      0.25
+    );
+
+  return {
+    // v4.1.2 frontend compatibility aliases
+    score,
+
+    overallScore:
+      score,
+
+    totalScore:
+      score,
+
+    readinessScore:
+      score,
+
+    casevoScore:
+      score,
+
+    clarity,
+
+    requirementsClarity:
+      clarity,
+
+    requirementClarity:
+      clarity,
+
+    specification,
+
+    specificationQuality:
+      specification,
+
+    commercial,
+
+    commercialReadiness:
+      commercial,
+
+    note:
+      "Readiness reflects the completeness of the sourcing requirement, not supplier verification."
+  };
+}
+
+function extractProduct(
+  text
+) {
+  const value =
+    clean(
+      text
+    ).toLowerCase();
+
+  for (
+    const [
+      term,
+      product
+    ] of PRODUCT_TERMS
+  ) {
+    if (
+      value.includes(
+        term.toLowerCase()
+      )
+    ) {
+      return product;
+    }
+  }
+
+  return "";
+}
+
+function extractQuantity(
+  text
+) {
+  const match =
+    clean(
+      text
+    ).match(
+      /(\d[\d,.\s]*)\s*(pairs?|pcs?|pieces?|kg|kgs|kilograms?|tons?|tonnes?|mt|sqm|sqft|square meters?|units?)/i
+    );
+
+  return match
+    ? clean(
+        match[0]
+      )
+    : "";
+}
+
+function extractPrice(
+  text
+) {
+  const match =
+    clean(
+      text
+    ).match(
+      /(?:usd|us\$|\$)\s*[\d,.]+(?:\s*(?:per|\/)\s*[a-zA-Z0-9 ]+)?/i
+    );
+
+  return match
+    ? clean(
+        match[0]
+      )
+    : "";
+}
+
+function extractDestination(
+  text
+) {
+  const value =
+    clean(
+      text
+    ).toLowerCase();
+
+  for (
+    const [
+      term,
+      destination
+    ] of DESTINATION_RULES
+  ) {
+    if (
+      value.includes(
+        term
+      )
+    ) {
+      return destination;
+    }
+  }
+
+  return "";
+}
+
+function countSignals(
+  text,
+  signals
+) {
+  const value =
+    clean(
+      text
+    ).toLowerCase();
+
+  let count =
+    0;
+
+  for (
+    const signal of
+    signals ||
+    []
+  ) {
+    if (
+      value.includes(
+        String(
+          signal
+        ).toLowerCase()
+      )
+    ) {
+      count +=
+        1;
+    }
+  }
+
+  return count;
+}
+
+function unique(
+  values
+) {
+  return [
+    ...new Set(
+      (
+        values ||
+        []
+      ).filter(Boolean)
+    )
+  ];
+}
+
+function clean(
+  value
+) {
+  if (
+    value === null ||
+    typeof value ===
+      "undefined"
+  ) {
+    return "";
+  }
+
+  return String(
+    value
+  )
+    .replace(
+      /\s+/g,
+      " "
+    )
+    .trim()
+    .slice(
+      0,
+      MAX_INPUT_LENGTH
+    );
+}
+
+function sanitizeWebText(
+  value
+) {
+  return String(
+    value ||
+    ""
+  )
+    .replace(
+      /<script\b[^>]*>[\s\S]*?<\/script>/gi,
+      " "
+    )
+
+    .replace(
+      /<style\b[^>]*>[\s\S]*?<\/style>/gi,
+      " "
+    )
+
+    .replace(
+      /!\[[^\]]*\]\([^)]+\)/g,
+      " "
+    )
+
+    .replace(
+      /\[([^\]]+)\]\([^)]+\)/g,
+      "$1"
+    )
+
+    .replace(
+      /https?:\/\/[^\s<>"']+/gi,
+      " "
+    )
+
+    .replace(
+      /www\.[^\s<>"']+/gi,
+      " "
+    )
+
+    .replace(
+      /<[^>]*>/g,
+      " "
+    )
+
+    .replace(
+      /&(?:amp|nbsp|quot|lt|gt|#39);/gi,
+      " "
+    )
+
+    .replace(
+      /(?:%[0-9A-Fa-f]{2}){8,}/g,
+      " "
+    )
+
+    .replace(
+      /[A-Za-z0-9+/]{120,}={0,2}/g,
+      " "
+    )
+
+    .replace(
+      /(.)\1{12,}/g,
+      "$1$1$1"
+    )
+
+    .replace(
+      /\b(?:cookie policy|privacy policy|terms of use|subscribe now|sign up now)\b/gi,
+      " "
+    )
+
+    .replace(
+      /\s+/g,
+      " "
+    )
+
+    .trim()
+
+    .slice(
+      0,
+      MAX_INPUT_LENGTH
+    );
+}
+
+function normalizeUrl(
+  value
+) {
+  try {
+    let input =
+      clean(
+        value
+      );
+
+    if (!input) {
+      return "";
+    }
+
+    if (
+      !/^https?:\/\//i.test(
+        input
+      )
+    ) {
+      input =
+        `https://${input}`;
+    }
+
+    const parsed =
+      new URL(
+        input
+      );
+
+    if (
+      parsed.protocol !==
+      "http:" &&
+      parsed.protocol !==
+      "https:"
+    ) {
+      return "";
+    }
+
+    parsed.hash =
+      "";
+
+    const tracking = [
+      "utm_source",
+      "utm_medium",
+      "utm_campaign",
+      "utm_term",
+      "utm_content",
+      "gclid",
+      "fbclid",
+      "msclkid"
+    ];
+
+    for (
+      const key of tracking
+    ) {
+      parsed.searchParams.delete(
+        key
+      );
+    }
+
+    return parsed.toString();
+  } catch {
+    return "";
+  }
+}
+
+function getDomain(
+  url
+) {
+  try {
+    const normalized =
+      normalizeUrl(
+        url
+      );
+
+    if (!normalized) {
+      return "";
+    }
+
+    return new URL(
+      normalized
+    )
+      .hostname
+      .replace(
+        /^www\./i,
+        ""
+      )
+      .toLowerCase();
+  } catch {
+    return "";
+  }
+}
+
+function getWebsiteRoot(
+  url
+) {
+  try {
+    const normalized =
+      normalizeUrl(
+        url
+      );
+
+    if (!normalized) {
+      return "";
+    }
+
+    const parsed =
+      new URL(
+        normalized
+      );
+
+    return `${parsed.protocol}//${parsed.hostname}`;
+  } catch {
+    return "";
+  }
+}
+
+function truncate(
+  value,
+  maxLength
+) {
+  const text =
+    clean(
+      value
+    );
+
+  if (
+    !maxLength ||
+    text.length <=
+      maxLength
+  ) {
+    return text;
+  }
+
+  const shortened =
+    text.slice(
+      0,
+      maxLength
+    );
+
+  const lastSpace =
+    shortened.lastIndexOf(
+      " "
+    );
+
+  if (
+    lastSpace >
+    Math.floor(
+      maxLength *
+      0.60
+    )
+  ) {
+    return `${shortened
+      .slice(
+        0,
+        lastSpace
+      )
+      .trim()}...`;
+  }
+
+  return `${shortened.trim()}...`;
+}
+
+function escapeRegExp(
+  value
+) {
+  return String(
+    value ||
+    ""
+  ).replace(
+    /[.*+?^${}()|[\]\\]/g,
+    "\\$&"
+  );
+}
+
+async function safeJson(
+  response
+) {
+  try {
+    return await response.json();
+  } catch {
+    return {};
+  }
+}
+
+function createRequestId() {
+  const timestamp =
+    Date.now()
+      .toString(
+        36
+      )
+      .toUpperCase();
+
+  const random =
+    Math.random()
+      .toString(
+        36
+      )
+      .slice(
+        2,
+        8
+      )
+      .toUpperCase();
+
+  return `CASEVO-${timestamp}-${random}`;
+}
+
+function corsHeaders() {
+  return {
+    "Access-Control-Allow-Origin":
+      "*",
+
+    "Access-Control-Allow-Methods":
+      "GET, POST, OPTIONS",
+
+    "Access-Control-Allow-Headers":
+      "Content-Type, Accept",
+
+    "Access-Control-Max-Age":
+      "86400"
+  };
+}
+
+function jsonResponse(
+  data,
+  status = 200
+) {
+  return new Response(
+    JSON.stringify(
+      data,
+      null,
+      2
+    ),
+    {
+      status,
+
+      headers: {
+        ...corsHeaders(),
+
+        "Content-Type":
+          "application/json; charset=UTF-8",
+
+        "Cache-Control":
+          "no-store"
+      }
+    }
+  );
+}
+worker_v4.1.3.js
+Displaying worker_v4.1.3.js.
