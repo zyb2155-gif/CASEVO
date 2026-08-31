@@ -1,64 +1,115 @@
 /* ============================================================
-   CASEVO AI SOURCING — FRONTEND FINAL POSITION FIX
+   CASEVO AI SOURCING — FRONTEND
+   Version 4.1.0
+   Supplier Discovery + Human Verification
    ============================================================
 
-   Compatible with CASEVO Worker v4.0.0
+   Compatible with:
+   POST /api/sourcing
+   POST /api/verify-supplier
 
    IMPORTANT:
-   - Uses the EXISTING #results container in index.html.
-   - Uses the EXISTING #brief container.
-   - Uses the EXISTING #supplierGrid container.
-   - NEVER creates #casevo-results.
-   - NEVER inserts results after the form.
-   - Keeps the right-side CASEVO panel in its original position.
-   - POSTs sourcing requests to /api/sourcing.
+   - Uses existing #results
+   - Uses existing #brief
+   - Uses existing #supplierGrid
+   - Does NOT create a second results section
+   - Keeps existing page structure intact
    ============================================================ */
 
 (function () {
   "use strict";
 
-  const API_ENDPOINT = "/api/sourcing";
+  const SOURCING_ENDPOINT =
+    "/api/sourcing";
+
+  const VERIFY_ENDPOINT =
+    "/api/verify-supplier";
 
   const MAX_SUPPLIERS = 8;
+
   const MAX_CAPABILITY = 420;
+
   const MAX_EVIDENCE = 700;
+
+
+  /* ==========================================================
+     STATE
+     ========================================================== */
+
+  const state = {
+    lastFormValues: null,
+    lastResult: null,
+    suppliers: []
+  };
 
 
   /* ==========================================================
      BASIC HELPERS
      ========================================================== */
 
-  function qs(selector, root) {
-    return (root || document).querySelector(selector);
-  }
-
-
-  function qsa(selector, root) {
-    return Array.from(
-      (root || document).querySelectorAll(selector)
+  function qs(
+    selector,
+    root
+  ) {
+    return (
+      root ||
+      document
+    ).querySelector(
+      selector
     );
   }
 
 
-  function clean(value) {
+  function qsa(
+    selector,
+    root
+  ) {
+    return Array.from(
+      (
+        root ||
+        document
+      ).querySelectorAll(
+        selector
+      )
+    );
+  }
+
+
+  function clean(
+    value
+  ) {
     if (
       value === null ||
-      typeof value === "undefined"
+      typeof value ===
+        "undefined"
     ) {
       return "";
     }
 
-    return String(value)
-      .replace(/\s+/g, " ")
+    return String(
+      value
+    )
+      .replace(
+        /\s+/g,
+        " "
+      )
       .trim();
   }
 
 
   function firstNonEmpty() {
-    for (const value of arguments) {
-      const text = clean(value);
+    for (
+      const value
+      of arguments
+    ) {
+      const text =
+        clean(
+          value
+        );
 
-      if (text) {
+      if (
+        text
+      ) {
         return text;
       }
     }
@@ -67,23 +118,45 @@
   }
 
 
-  function escapeHtml(value) {
+  function escapeHtml(
+    value
+  ) {
     return String(
       value === null ||
-      typeof value === "undefined"
+      typeof value ===
+        "undefined"
         ? ""
         : value
     )
-      .replace(/&/g, "&amp;")
-      .replace(/</g, "&lt;")
-      .replace(/>/g, "&gt;")
-      .replace(/"/g, "&quot;")
-      .replace(/'/g, "&#039;");
+      .replace(
+        /&/g,
+        "&amp;"
+      )
+      .replace(
+        /</g,
+        "&lt;"
+      )
+      .replace(
+        />/g,
+        "&gt;"
+      )
+      .replace(
+        /"/g,
+        "&quot;"
+      )
+      .replace(
+        /'/g,
+        "&#039;"
+      );
   }
 
 
-  function escapeAttr(value) {
-    return escapeHtml(value);
+  function escapeAttr(
+    value
+  ) {
+    return escapeHtml(
+      value
+    );
   }
 
 
@@ -91,11 +164,15 @@
     value,
     maxLength
   ) {
-    const text = clean(value);
+    const text =
+      clean(
+        value
+      );
 
     if (
       !text ||
-      text.length <= maxLength
+      text.length <=
+        maxLength
     ) {
       return text;
     }
@@ -107,27 +184,39 @@
       );
 
     const lastSpace =
-      cut.lastIndexOf(" ");
+      cut.lastIndexOf(
+        " "
+      );
 
     return (
       (
         lastSpace >
-        maxLength * 0.6
+        maxLength *
+          0.6
+
           ? cut.slice(
               0,
               lastSpace
             )
+
           : cut
-      ).trim() + "…"
+      ).trim() +
+      "…"
     );
   }
 
 
-  function safeUrl(value) {
+  function safeUrl(
+    value
+  ) {
     const raw =
-      clean(value);
+      clean(
+        value
+      );
 
-    if (!raw) {
+    if (
+      !raw
+    ) {
       return "";
     }
 
@@ -139,8 +228,10 @@
         );
 
       if (
-        parsed.protocol !== "http:" &&
-        parsed.protocol !== "https:"
+        parsed.protocol !==
+          "http:" &&
+        parsed.protocol !==
+          "https:"
       ) {
         return "";
       }
@@ -153,34 +244,121 @@
   }
 
 
+  function normalizePercent(
+    value
+  ) {
+    if (
+      value === null ||
+      typeof value ===
+        "undefined" ||
+      value === ""
+    ) {
+      return "—";
+    }
+
+    const text =
+      clean(
+        value
+      );
+
+    if (
+      /%$/.test(
+        text
+      )
+    ) {
+      return text;
+    }
+
+    const number =
+      Number(
+        text
+      );
+
+    return Number.isFinite(
+      number
+    )
+      ? `${Math.round(
+          number
+        )}%`
+      : text;
+  }
+
+
+  function normalizeScore(
+    value
+  ) {
+    if (
+      value === null ||
+      typeof value ===
+        "undefined" ||
+      value === ""
+    ) {
+      return "—";
+    }
+
+    const number =
+      Number(
+        String(
+          value
+        )
+          .replace(
+            "%",
+            ""
+          )
+          .trim()
+      );
+
+    return Number.isFinite(
+      number
+    )
+      ? String(
+          Math.max(
+            0,
+            Math.min(
+              100,
+              Math.round(
+                number
+              )
+            )
+          )
+        )
+      : clean(
+          value
+        );
+  }
+
+
   /* ==========================================================
      WEB TEXT CLEANING
      ========================================================== */
 
-  function cleanWebText(value) {
+  function cleanWebText(
+    value
+  ) {
     let text =
-      clean(value);
+      clean(
+        value
+      );
 
-    if (!text) {
+    if (
+      !text
+    ) {
       return "";
     }
 
     text =
       text
 
-        /* Markdown images */
         .replace(
           /!\[[^\]]*\]\([^)]+\)/g,
           " "
         )
 
-        /* Markdown links */
         .replace(
           /\[([^\]]+)\]\([^)]+\)/g,
           "$1"
         )
 
-        /* URLs */
         .replace(
           /https?:\/\/\S+/gi,
           " "
@@ -191,31 +369,26 @@
           " "
         )
 
-        /* HTML */
         .replace(
           /<[^>]*>/g,
           " "
         )
 
-        /* Encoded garbage */
         .replace(
           /(?:%[0-9A-Fa-f]{2}){8,}/g,
           " "
         )
 
-        /* Base64-like garbage */
         .replace(
           /[A-Za-z0-9+/]{120,}={0,2}/g,
           " "
         )
 
-        /* Repeated characters */
         .replace(
           /(.)\1{12,}/g,
           "$1$1$1"
         )
 
-        /* Whitespace */
         .replace(
           /\s+/g,
           " "
@@ -228,76 +401,11 @@
 
 
   /* ==========================================================
-     SCORE NORMALIZATION
-     ========================================================== */
-
-  function normalizePercent(value) {
-    if (
-      value === null ||
-      typeof value === "undefined" ||
-      value === ""
-    ) {
-      return "—";
-    }
-
-    const text =
-      clean(value);
-
-    if (!text) {
-      return "—";
-    }
-
-    if (
-      /%$/.test(text)
-    ) {
-      return text;
-    }
-
-    const number =
-      Number(text);
-
-    return Number.isFinite(number)
-      ? `${Math.round(number)}%`
-      : text;
-  }
-
-
-  function normalizeScore(value) {
-    if (
-      value === null ||
-      typeof value === "undefined" ||
-      value === ""
-    ) {
-      return "—";
-    }
-
-    const number =
-      Number(
-        String(value)
-          .replace("%", "")
-          .trim()
-      );
-
-    return Number.isFinite(number)
-      ? String(
-          Math.max(
-            0,
-            Math.min(
-              100,
-              Math.round(number)
-            )
-          )
-        )
-      : clean(value);
-  }
-
-
-  /* ==========================================================
      FIND SOURCING FORM
      ========================================================== */
 
   function findSourcingForm() {
-    const explicit = [
+    const selectors = [
       "#sourcingForm",
       "#sourcing-form",
       "#ai-sourcing-form",
@@ -307,22 +415,32 @@
 
     for (
       const selector
-      of explicit
+      of selectors
     ) {
-      const element =
-        qs(selector);
+      const form =
+        qs(
+          selector
+        );
 
-      if (element) {
-        return element;
+      if (
+        form
+      ) {
+        return form;
       }
     }
 
+
     const forms =
-      qsa("form");
+      qsa(
+        "form"
+      );
+
 
     return (
       forms.find(
-        function (form) {
+        function (
+          form
+        ) {
           const text =
             clean(
               form.innerText ||
@@ -357,23 +475,33 @@
 
 
   /* ==========================================================
-     EXISTING RESULTS STRUCTURE
+     EXISTING RESULTS
      ========================================================== */
 
   const resultContainer =
-    qs("#results");
+    qs(
+      "#results"
+    );
 
   const briefContainer =
-    qs("#brief");
+    qs(
+      "#brief"
+    );
 
   const supplierGrid =
-    qs("#supplierGrid");
+    qs(
+      "#supplierGrid"
+    );
 
   const resultTitle =
-    qs("#resultTitle");
+    qs(
+      "#resultTitle"
+    );
 
 
-  if (!form) {
+  if (
+    !form
+  ) {
     console.error(
       "CASEVO: sourcing form not found."
     );
@@ -382,25 +510,13 @@
   }
 
 
-  /*
-   * IMPORTANT:
-   *
-   * We do NOT create a new result element.
-   *
-   * index.html already contains:
-   *
-   * #results
-   * #brief
-   * #supplierGrid
-   */
-
   if (
     !resultContainer ||
     !briefContainer ||
     !supplierGrid
   ) {
     console.error(
-      "CASEVO: existing result structure (#results / #brief / #supplierGrid) not found."
+      "CASEVO: #results / #brief / #supplierGrid not found."
     );
 
     return;
@@ -408,7 +524,7 @@
 
 
   /* ==========================================================
-     FIELD HELPERS
+     FIELD DISCOVERY
      ========================================================== */
 
   function firstExisting(
@@ -425,7 +541,9 @@
           root
         );
 
-      if (element) {
+      if (
+        element
+      ) {
         return element;
       }
     }
@@ -444,49 +562,53 @@
         form
       );
 
-    if (direct) {
+    if (
+      direct
+    ) {
       return direct;
     }
+
 
     return (
       qsa(
         "input",
         form
-      ).find(
-        function (input) {
-          const haystack =
-            (
-              clean(
-                input.id
-              ) +
-              " " +
-              clean(
-                input.name
-              ) +
-              " " +
-              clean(
-                input.placeholder
+      )
+        .find(
+          function (
+            input
+          ) {
+            const text =
+              (
+                clean(
+                  input.id
+                ) +
+                " " +
+                clean(
+                  input.name
+                ) +
+                " " +
+                clean(
+                  input.placeholder
+                )
               )
-            )
-              .toLowerCase();
+                .toLowerCase();
 
-          return words.some(
-            function (word) {
-              return haystack.includes(
+            return words.some(
+              function (
                 word
-              );
-            }
-          );
-        }
-      ) ||
+              ) {
+                return text.includes(
+                  word
+                );
+              }
+            );
+          }
+        ) ||
       null
     );
   }
 
-
-  /* ==========================================================
-     REQUIREMENT FIELD
-     ========================================================== */
 
   const requirementField =
     firstExisting(
@@ -508,10 +630,6 @@
     );
 
 
-  /* ==========================================================
-     PRODUCT FIELD
-     ========================================================== */
-
   const productField =
     findInput(
       [
@@ -525,15 +643,10 @@
       ],
       [
         "product",
-        "material",
-        "upper leather"
+        "material"
       ]
     );
 
-
-  /* ==========================================================
-     QUANTITY FIELD
-     ========================================================== */
 
   const quantityField =
     findInput(
@@ -542,16 +655,10 @@
         'input[name="quantity"]'
       ],
       [
-        "quantity",
-        "pairs",
-        "pcs"
+        "quantity"
       ]
     );
 
-
-  /* ==========================================================
-     PRICE FIELD
-     ========================================================== */
 
   const targetPriceField =
     findInput(
@@ -571,10 +678,6 @@
     );
 
 
-  /* ==========================================================
-     DESTINATION FIELD
-     ========================================================== */
-
   const destinationField =
     findInput(
       [
@@ -582,9 +685,7 @@
         'input[name="destination"]'
       ],
       [
-        "destination",
-        "usa",
-        "country"
+        "destination"
       ]
     );
 
@@ -600,7 +701,6 @@
         "#analyzeButton",
         "#find-matches",
         "#findMatches",
-
         'button[type="submit"]',
         'input[type="submit"]'
       ],
@@ -608,20 +708,25 @@
     );
 
 
-  if (!submitButton) {
+  if (
+    !submitButton
+  ) {
     submitButton =
       qsa(
         "button",
         form
-      ).find(
-        function (button) {
-          return /analy|match|source|find/i
-            .test(
-              button.textContent ||
-              ""
-            );
-        }
-      );
+      )
+        .find(
+          function (
+            button
+          ) {
+            return /analy|match|source|find/i
+              .test(
+                button.textContent ||
+                ""
+              );
+          }
+        );
   }
 
 
@@ -629,14 +734,21 @@
      FORM VALUES
      ========================================================== */
 
-  function valueOf(element) {
-    if (!element) {
+  function valueOf(
+    element
+  ) {
+    if (
+      !element
+    ) {
       return "";
     }
 
     return clean(
-      "value" in element
+      "value" in
+        element
+
         ? element.value
+
         : element.textContent
     );
   }
@@ -673,7 +785,7 @@
 
 
   /* ==========================================================
-     RESPONSE NORMALIZATION
+     NORMALIZE SOURCING RESPONSE
      ========================================================== */
 
   function normalizeResponse(
@@ -681,16 +793,20 @@
     values
   ) {
     const root =
-      data || {};
+      data ||
+      {};
 
     const analysis =
-      root.analysis || {};
+      root.analysis ||
+      {};
 
     const normalized =
-      analysis.normalized || {};
+      analysis.normalized ||
+      {};
 
     const brief =
-      root.brief || {};
+      root.brief ||
+      {};
 
     const scoring =
       analysis.scoring ||
@@ -716,14 +832,6 @@
     ) {
       matches =
         root.matches;
-
-    } else if (
-      Array.isArray(
-        normalized.matches
-      )
-    ) {
-      matches =
-        normalized.matches;
     }
 
 
@@ -734,7 +842,6 @@
           root.request_id
         ),
 
-
       product:
         firstNonEmpty(
           normalized.product,
@@ -744,7 +851,6 @@
           "Sourcing requirement"
         ),
 
-
       quantity:
         firstNonEmpty(
           normalized.quantity,
@@ -753,7 +859,6 @@
           values.quantity,
           "Not specified"
         ),
-
 
       targetPrice:
         firstNonEmpty(
@@ -771,7 +876,6 @@
           "Not specified"
         ),
 
-
       destination:
         firstNonEmpty(
           normalized.destination,
@@ -781,14 +885,12 @@
           "Not specified"
         ),
 
-
       requirements:
         Array.isArray(
           normalized.requirements
         )
           ? normalized.requirements
           : [],
-
 
       scoring: {
         score:
@@ -815,16 +917,15 @@
           )
       },
 
-
       matches:
         matches.slice(
           0,
           MAX_SUPPLIERS
         ),
 
-
       meta:
-        root.meta || {}
+        root.meta ||
+        {}
     };
   }
 
@@ -836,7 +937,7 @@
   function installStyles() {
     if (
       qs(
-        "#casevo-position-fix-styles"
+        "#casevo-v410-styles"
       )
     ) {
       return;
@@ -850,104 +951,64 @@
 
 
     style.id =
-      "casevo-position-fix-styles";
+      "casevo-v410-styles";
 
 
     style.textContent = `
 
-      /* =====================================================
-         EXISTING RESULTS CONTAINER
-         ===================================================== */
-
       #results {
-        width: 100%;
-        max-width: 100%;
-        min-width: 0;
-
-        box-sizing: border-box;
-
-        overflow: hidden;
+        width:100%;
+        max-width:100%;
+        min-width:0;
+        overflow:hidden;
+        box-sizing:border-box;
       }
-
 
       #results *,
       #results *::before,
       #results *::after {
-        box-sizing: border-box;
+        box-sizing:border-box;
       }
 
 
-      /* =====================================================
-         SOURCING BRIEF
-         ===================================================== */
+      /* BRIEF */
 
       #brief {
-        display: grid;
-
+        display:grid;
         grid-template-columns:
           repeat(
             4,
-            minmax(0, 1fr)
+            minmax(0,1fr)
           );
 
-        width: 100%;
-        min-width: 0;
+        width:100%;
+        min-width:0;
 
         margin:
-          0
-          0
-          22px;
+          0 0 22px;
 
         border-top:
-          1px solid
-          var(
-            --line,
-            #d9d0c2
-          );
+          1px solid var(--line,#d9d0c2);
 
         border-left:
-          1px solid
-          var(
-            --line,
-            #d9d0c2
-          );
+          1px solid var(--line,#d9d0c2);
       }
-
 
       #brief .casevo-brief-cell {
-        min-width: 0;
+        min-width:0;
 
         padding:
-          14px
-          16px;
+          14px 16px;
 
         border-right:
-          1px solid
-          var(
-            --line,
-            #d9d0c2
-          );
+          1px solid var(--line,#d9d0c2);
 
         border-bottom:
-          1px solid
-          var(
-            --line,
-            #d9d0c2
-          );
-
-        background:
-          rgba(
-            255,
-            255,
-            255,
-            .18
-          );
+          1px solid var(--line,#d9d0c2);
       }
 
-
-      #brief .casevo-brief-label,
-      #brief .casevo-readiness-label {
-        display: block;
+      #brief .casevo-label {
+        display:block;
 
         margin-bottom:
           7px;
@@ -962,14 +1023,10 @@
           uppercase;
 
         color:
-          var(
-            --muted,
-            #756c61
-          );
+          var(--muted,#756c61);
       }
 
-
-      #brief .casevo-brief-value {
+      #brief .casevo-value {
         font-size:
           11px;
 
@@ -978,67 +1035,43 @@
 
         overflow-wrap:
           anywhere;
-
-        word-break:
-          break-word;
       }
 
 
-      /* =====================================================
-         READINESS
-         ===================================================== */
+      /* READINESS */
 
       #brief .casevo-readiness {
         grid-column:
-          1 / -1;
+          1/-1;
 
-        display:
-          grid;
+        display:grid;
 
         grid-template-columns:
           repeat(
             4,
-            minmax(0, 1fr)
+            minmax(0,1fr)
           );
 
         border-right:
-          1px solid
-          var(
-            --line,
-            #d9d0c2
-          );
+          1px solid var(--line,#d9d0c2);
 
         border-bottom:
-          1px solid
-          var(
-            --line,
-            #d9d0c2
-          );
+          1px solid var(--line,#d9d0c2);
       }
-
 
       #brief .casevo-readiness-item {
-        min-width:
-          0;
+        min-width:0;
 
         padding:
-          13px
-          16px;
+          13px 16px;
 
         border-right:
-          1px solid
-          var(
-            --line,
-            #d9d0c2
-          );
+          1px solid var(--line,#d9d0c2);
       }
-
 
       #brief .casevo-readiness-item:last-child {
-        border-right:
-          0;
+        border-right:0;
       }
-
 
       #brief .casevo-readiness-value {
         font-family:
@@ -1054,134 +1087,82 @@
       }
 
 
-      /* =====================================================
-         NORMALIZED REQUIREMENTS
-         ===================================================== */
+      /* NORMALIZED REQUIREMENTS */
 
       #brief .casevo-requirements {
         grid-column:
-          1 / -1;
+          1/-1;
 
         padding:
-          14px
-          16px;
+          14px 16px;
 
         border-right:
-          1px solid
-          var(
-            --line,
-            #d9d0c2
-          );
+          1px solid var(--line,#d9d0c2);
 
         border-bottom:
-          1px solid
-          var(
-            --line,
-            #d9d0c2
-          );
+          1px solid var(--line,#d9d0c2);
       }
 
+      #brief .casevo-tags {
+        display:flex;
 
-      #brief .casevo-requirement-tags {
-        display:
-          flex;
+        flex-wrap:wrap;
 
-        flex-wrap:
-          wrap;
-
-        gap:
-          6px;
+        gap:6px;
       }
 
-
-      #brief .casevo-requirement-tag {
-        max-width:
-          100%;
-
+      #brief .casevo-tag {
         padding:
-          5px
-          7px;
+          5px 7px;
 
         border:
-          1px solid
-          var(
-            --line,
-            #d9d0c2
-          );
+          1px solid var(--line,#d9d0c2);
 
         font-size:
           9px;
 
         line-height:
           1.4;
-
-        overflow-wrap:
-          anywhere;
       }
 
 
-      /* =====================================================
-         SUPPLIER GRID
-         ===================================================== */
+      /* SUPPLIER GRID */
 
       #supplierGrid {
-        display:
-          grid !important;
+        display:grid !important;
 
         grid-template-columns:
           repeat(
             2,
-            minmax(0, 1fr)
+            minmax(0,1fr)
           ) !important;
 
         gap:
           14px !important;
 
-        align-items:
-          start;
+        align-items:start;
 
-        width:
-          100%;
-
-        max-width:
-          100%;
-
-        min-width:
-          0;
+        width:100%;
+        min-width:0;
       }
-
 
       #supplierGrid .supplier {
-        width:
-          100%;
+        width:100%;
+        min-width:0;
 
-        min-width:
-          0;
+        padding:18px;
 
-        max-width:
-          100%;
+        overflow:hidden;
 
-        padding:
-          18px;
-
-        overflow:
-          hidden;
-
-        overflow-wrap:
-          anywhere;
-
-        word-break:
-          break-word;
+        overflow-wrap:anywhere;
+        word-break:break-word;
       }
 
 
-      /* =====================================================
-         SUPPLIER HEADER
-         ===================================================== */
+      /* CARD HEADER */
 
       #supplierGrid .casevo-supplier-top {
-        display:
-          flex;
+        display:flex;
 
         justify-content:
           space-between;
@@ -1189,406 +1170,466 @@
         align-items:
           flex-start;
 
-        gap:
-          12px;
-
-        min-width:
-          0;
+        gap:12px;
       }
-
 
       #supplierGrid .casevo-supplier-main {
         flex:
           1 1 auto;
 
-        min-width:
-          0;
+        min-width:0;
       }
-
 
       #supplierGrid .casevo-supplier-rank {
-        margin-bottom:
-          8px;
+        margin-bottom:8px;
 
-        font-size:
-          8px;
+        font-size:8px;
 
-        letter-spacing:
-          .13em;
+        letter-spacing:.13em;
 
-        text-transform:
-          uppercase;
+        text-transform:uppercase;
 
         color:
-          var(
-            --red,
-            #a92d25
-          );
+          var(--red,#a92d25);
       }
 
-
       #supplierGrid .casevo-supplier-name {
-        margin:
-          0;
+        margin:0;
 
         font-family:
           Georgia,
           "Times New Roman",
           serif;
 
-        font-size:
-          17px;
+        font-size:17px;
 
-        line-height:
-          1.12;
+        line-height:1.12;
 
-        font-weight:
-          500;
-
-        overflow-wrap:
-          anywhere;
+        font-weight:500;
       }
-
 
       #supplierGrid .casevo-supplier-location,
       #supplierGrid .casevo-supplier-type {
-        margin-top:
-          6px;
+        margin-top:6px;
 
-        font-size:
-          9px;
+        font-size:9px;
 
-        line-height:
-          1.45;
+        line-height:1.45;
 
         color:
-          var(
-            --muted,
-            #756c61
-          );
+          var(--muted,#756c61);
       }
 
 
-      /* =====================================================
-         MATCH SCORE
-         ===================================================== */
+      /* MATCH */
 
       #supplierGrid .casevo-match-score {
         flex:
           0 0 auto;
 
-        text-align:
-          right;
+        text-align:right;
 
         color:
-          var(
-            --red,
-            #a92d25
-          );
+          var(--red,#a92d25);
       }
 
-
       #supplierGrid .casevo-match-score strong {
-        display:
-          block;
+        display:block;
 
         font-family:
           Georgia,
           "Times New Roman",
           serif;
 
-        font-size:
-          20px;
+        font-size:20px;
 
-        line-height:
-          1;
+        line-height:1;
 
-        font-weight:
-          500;
+        font-weight:500;
       }
-
 
       #supplierGrid .casevo-match-score span {
-        display:
-          block;
+        display:block;
 
-        margin-top:
-          4px;
+        margin-top:4px;
 
-        font-size:
-          7px;
+        font-size:7px;
 
-        letter-spacing:
-          .12em;
+        letter-spacing:.12em;
 
-        text-transform:
-          uppercase;
+        text-transform:uppercase;
 
         color:
-          var(
-            --muted,
-            #756c61
-          );
+          var(--muted,#756c61);
       }
 
 
-      /* =====================================================
-         CAPABILITY
-         ===================================================== */
+      /* CAPABILITY */
 
       #supplierGrid .casevo-capability {
-        margin-top:
-          14px;
+        margin-top:14px;
 
-        padding-top:
-          12px;
+        padding-top:12px;
 
         border-top:
-          1px solid
-          var(
-            --line,
-            #d9d0c2
-          );
+          1px solid var(--line,#d9d0c2);
 
-        font-size:
-          10px;
+        font-size:10px;
 
-        line-height:
-          1.55;
+        line-height:1.55;
 
         color:
-          var(
-            --muted,
-            #655d54
-          );
-
-        overflow-wrap:
-          anywhere;
+          var(--muted,#655d54);
       }
 
 
-      /* =====================================================
-         CONTACTS
-         ===================================================== */
+      /* CONTACTS */
 
       #supplierGrid .casevo-contact-row {
-        display:
-          flex;
+        display:flex;
 
-        flex-wrap:
-          wrap;
+        flex-wrap:wrap;
 
         gap:
-          8px
-          12px;
+          8px 12px;
 
-        margin-top:
-          13px;
+        margin-top:13px;
 
-        font-size:
-          9px;
-
-        line-height:
-          1.45;
+        font-size:9px;
       }
-
 
       #supplierGrid .casevo-contact-row a {
         color:
-          var(
-            --red,
-            #a92d25
-          );
+          var(--red,#a92d25);
 
-        text-decoration:
-          none;
-
-        overflow-wrap:
-          anywhere;
+        text-decoration:none;
       }
 
 
-      /* =====================================================
-         EVIDENCE
-         ===================================================== */
+      /* EVIDENCE */
 
       #supplierGrid .casevo-evidence {
-        margin-top:
-          13px;
+        margin-top:13px;
 
-        padding-top:
-          11px;
+        padding-top:11px;
 
         border-top:
-          1px solid
-          var(
-            --line,
-            #d9d0c2
-          );
+          1px solid var(--line,#d9d0c2);
       }
-
 
       #supplierGrid .casevo-evidence summary {
-        cursor:
-          pointer;
+        cursor:pointer;
 
-        font-size:
-          9px;
+        font-size:9px;
 
         color:
-          var(
-            --muted,
-            #655d54
-          );
+          var(--muted,#655d54);
       }
-
 
       #supplierGrid .casevo-evidence-text {
-        margin-top:
-          10px;
+        margin-top:10px;
+
+        font-size:9px;
+
+        line-height:1.5;
+
+        color:
+          var(--muted,#655d54);
+      }
+
+
+      /* VERIFY BUTTON */
+
+      #supplierGrid .casevo-verify-button {
+        display:inline-flex;
+
+        align-items:center;
+
+        justify-content:center;
+
+        margin-top:14px;
+
+        padding:
+          10px 13px;
+
+        border:
+          1px solid var(--red,#a92d25);
+
+        background:
+          transparent;
+
+        color:
+          var(--red,#a92d25);
+
+        font-family:
+          inherit;
 
         font-size:
           9px;
 
-        line-height:
-          1.5;
+        font-weight:600;
 
-        color:
-          var(
-            --muted,
-            #655d54
-          );
+        cursor:pointer;
 
-        overflow-wrap:
-          anywhere;
+        transition:
+          all .2s ease;
+      }
 
-        word-break:
-          break-word;
+      #supplierGrid .casevo-verify-button:hover {
+        background:
+          var(--red,#a92d25);
+
+        color:#fff;
+      }
+
+      #supplierGrid .casevo-verify-button:disabled {
+        opacity:.55;
+        cursor:wait;
       }
 
 
-      /* =====================================================
-         VERIFICATION
-         ===================================================== */
+      /* VERIFICATION PANEL */
 
-      #supplierGrid .casevo-verification {
-        margin-top:
-          13px;
+      #supplierGrid .casevo-verification-panel {
+        margin-top:16px;
 
-        padding-top:
-          10px;
+        padding:
+          16px;
+
+        border:
+          1px solid var(--line,#d9d0c2);
+
+        background:
+          rgba(255,255,255,.22);
+      }
+
+      #supplierGrid .casevo-verification-eyebrow {
+        margin-bottom:9px;
+
+        font-size:8px;
+
+        letter-spacing:.15em;
+
+        text-transform:uppercase;
+
+        color:
+          var(--red,#a92d25);
+      }
+
+      #supplierGrid .casevo-verification-heading {
+        display:flex;
+
+        justify-content:
+          space-between;
+
+        align-items:
+          flex-start;
+
+        gap:14px;
+
+        margin-bottom:13px;
+      }
+
+      #supplierGrid .casevo-verification-heading h5 {
+        margin:0;
+
+        font-family:
+          Georgia,
+          "Times New Roman",
+          serif;
+
+        font-size:16px;
+
+        font-weight:500;
+
+        line-height:1.15;
+      }
+
+      #supplierGrid .casevo-verification-score {
+        flex:
+          0 0 auto;
+
+        font-family:
+          Georgia,
+          "Times New Roman",
+          serif;
+
+        font-size:20px;
+
+        color:
+          var(--red,#a92d25);
+      }
+
+      #supplierGrid .casevo-verification-status {
+        margin:
+          0 0 14px;
+
+        padding:
+          9px 10px;
+
+        border-left:
+          2px solid var(--red,#a92d25);
+
+        font-size:9px;
+
+        line-height:1.45;
+      }
+
+      #supplierGrid .casevo-verification-list {
+        border-top:
+          1px solid var(--line,#d9d0c2);
+      }
+
+      #supplierGrid .casevo-verification-row {
+        display:grid;
+
+        grid-template-columns:
+          minmax(0,1fr)
+          minmax(0,1fr);
+
+        gap:12px;
+
+        padding:
+          9px 0;
+
+        border-bottom:
+          1px solid var(--line,#d9d0c2);
+
+        font-size:9px;
+
+        line-height:1.4;
+      }
+
+      #supplierGrid .casevo-verification-row span:first-child {
+        color:
+          var(--muted,#756c61);
+      }
+
+      #supplierGrid .casevo-verification-row strong {
+        font-weight:500;
+
+        overflow-wrap:anywhere;
+      }
+
+      #supplierGrid .casevo-verification-summary {
+        margin-top:13px;
+
+        font-size:9px;
+
+        line-height:1.55;
+
+        color:
+          var(--muted,#655d54);
+      }
+
+      #supplierGrid .casevo-verification-source {
+        margin-top:12px;
+      }
+
+      #supplierGrid .casevo-verification-source details {
+        margin-top:8px;
+      }
+
+      #supplierGrid .casevo-verification-source summary {
+        cursor:pointer;
+
+        font-size:9px;
+      }
+
+      #supplierGrid .casevo-source-item {
+        margin-top:8px;
+
+        padding-top:8px;
 
         border-top:
-          1px solid
-          var(
-            --line,
-            #d9d0c2
-          );
+          1px solid var(--line,#d9d0c2);
 
-        font-size:
-          8px;
+        font-size:8px;
 
-        line-height:
-          1.45;
+        line-height:1.45;
+      }
 
+      #supplierGrid .casevo-source-item a {
         color:
-          var(
-            --muted,
-            #756c61
-          );
+          var(--red,#a92d25);
+
+        text-decoration:none;
+
+        overflow-wrap:anywhere;
       }
 
 
-      /* =====================================================
-         LOADING / ERROR / EMPTY
-         ===================================================== */
+      /* DISCOVERY STATUS */
+
+      #supplierGrid .casevo-discovery-status {
+        margin-top:13px;
+
+        padding-top:10px;
+
+        border-top:
+          1px solid var(--line,#d9d0c2);
+
+        font-size:8px;
+
+        color:
+          var(--muted,#756c61);
+      }
+
+
+      /* LOADING / ERROR */
 
       #supplierGrid .casevo-empty,
       #supplierGrid .casevo-error,
       #supplierGrid .casevo-loading {
-        grid-column:
-          1 / -1;
+        grid-column:1/-1;
 
-        width:
-          100%;
+        width:100%;
 
-        padding:
-          22px;
+        padding:22px;
 
         border:
-          1px solid
-          var(
-            --line,
-            #d9d0c2
-          );
+          1px solid var(--line,#d9d0c2);
 
-        background:
-          rgba(
-            255,
-            255,
-            255,
-            .18
-          );
+        font-size:11px;
 
-        font-size:
-          11px;
-
-        line-height:
-          1.6;
+        line-height:1.6;
       }
-
 
       #supplierGrid .casevo-error {
-        border-color:
-          #c85a4f;
-
-        color:
-          #8f2f24;
+        border-color:#c85a4f;
+        color:#8f2f24;
       }
 
 
-      /* =====================================================
-         TABLET
-         ===================================================== */
-
       @media (
-        max-width:
-          900px
+        max-width:900px
       ) {
 
         #brief {
           grid-template-columns:
             repeat(
               2,
-              minmax(0, 1fr)
+              minmax(0,1fr)
             );
         }
-
 
         #brief .casevo-readiness {
           grid-template-columns:
             repeat(
               2,
-              minmax(0, 1fr)
+              minmax(0,1fr)
             );
         }
-
 
         #supplierGrid {
           grid-template-columns:
             1fr !important;
         }
-
       }
 
 
-      /* =====================================================
-         MOBILE
-         ===================================================== */
-
       @media (
-        max-width:
-          600px
+        max-width:600px
       ) {
 
         #brief,
@@ -1597,6 +1638,10 @@
             1fr;
         }
 
+        #supplierGrid .casevo-verification-row {
+          grid-template-columns:
+            1fr;
+        }
       }
 
     `;
@@ -1612,7 +1657,7 @@
 
 
   /* ==========================================================
-     SHOW EXISTING RESULTS
+     SHOW RESULTS
      ========================================================== */
 
   function showResults() {
@@ -1625,18 +1670,22 @@
 
 
   /* ==========================================================
-     BUTTON LOADING STATE
+     MAIN BUTTON LOADING
      ========================================================== */
 
   function setLoading(
     loading
   ) {
-    if (!submitButton) {
+    if (
+      !submitButton
+    ) {
       return;
     }
 
 
-    if (loading) {
+    if (
+      loading
+    ) {
 
       if (
         !submitButton.dataset
@@ -1725,22 +1774,21 @@
 
 
   /* ==========================================================
-     BRIEF COMPONENTS
+     BRIEF
      ========================================================== */
 
   function briefCell(
     label,
     value
   ) {
-
     return `
       <div class="casevo-brief-cell">
 
-        <span class="casevo-brief-label">
+        <span class="casevo-label">
           ${escapeHtml(label)}
         </span>
 
-        <div class="casevo-brief-value">
+        <div class="casevo-value">
           ${escapeHtml(
             value ||
             "Not specified"
@@ -1756,11 +1804,10 @@
     label,
     value
   ) {
-
     return `
       <div class="casevo-readiness-item">
 
-        <span class="casevo-readiness-label">
+        <span class="casevo-label">
           ${escapeHtml(label)}
         </span>
 
@@ -1773,33 +1820,26 @@
   }
 
 
-  /* ==========================================================
-     RENDER BRIEF
-     ========================================================== */
-
   function renderBrief(
     result
   ) {
-
     const requirementTags =
       result.requirements
-
         .slice(
           0,
           10
         )
-
         .map(
-          function (item) {
-
+          function (
+            item
+          ) {
             return `
-              <span class="casevo-requirement-tag">
+              <span class="casevo-tag">
                 ${escapeHtml(item)}
               </span>
             `;
           }
         )
-
         .join("");
 
 
@@ -1826,7 +1866,6 @@
       ) +
 
       `
-
         <div class="casevo-readiness">
 
           ${readinessItem(
@@ -1858,26 +1897,23 @@
           )}
 
         </div>
-
       ` +
 
       (
         requirementTags
 
           ? `
-
             <div class="casevo-requirements">
 
-              <span class="casevo-brief-label">
+              <span class="casevo-label">
                 Normalized requirements
               </span>
 
-              <div class="casevo-requirement-tags">
+              <div class="casevo-tags">
                 ${requirementTags}
               </div>
 
             </div>
-
           `
 
           : ""
@@ -1893,13 +1929,14 @@
     supplier,
     index
   ) {
-
     const item =
-      supplier || {};
+      supplier ||
+      {};
 
 
     const name =
       firstNonEmpty(
+        item.companyName,
         item.name,
         item.company,
         item.title,
@@ -1986,18 +2023,19 @@
       );
 
 
-    const verification =
+    const verificationStatus =
       firstNonEmpty(
         item.verificationStatus,
         item.verification_status,
-        item.verification,
         "Unverified — due diligence required"
       );
 
 
     return `
-
-      <article class="supplier">
+      <article
+        class="supplier"
+        data-casevo-supplier-index="${index}"
+      >
 
         <div class="casevo-supplier-top">
 
@@ -2040,15 +2078,11 @@
 
         ${
           capability
-
             ? `
-
               <div class="casevo-capability">
                 ${escapeHtml(capability)}
               </div>
-
             `
-
             : ""
         }
 
@@ -2057,9 +2091,7 @@
 
           ${
             website
-
               ? `
-
                 <a
                   href="${escapeAttr(website)}"
                   target="_blank"
@@ -2067,41 +2099,31 @@
                 >
                   Visit supplier website →
                 </a>
-
               `
-
               : ""
           }
 
 
           ${
             email
-
               ? `
-
                 <a
                   href="mailto:${escapeAttr(email)}"
                 >
                   ${escapeHtml(email)}
                 </a>
-
               `
-
               : ""
           }
 
 
           ${
             phone
-
               ? `
-
                 <span>
                   ${escapeHtml(phone)}
                 </span>
-
               `
-
               : ""
           }
 
@@ -2110,9 +2132,7 @@
 
         ${
           evidence
-
             ? `
-
               <details class="casevo-evidence">
 
                 <summary>
@@ -2124,33 +2144,49 @@
                 </div>
 
               </details>
-
             `
-
             : ""
         }
 
 
-        <div class="casevo-verification">
-          ${escapeHtml(verification)}
+        <button
+          type="button"
+          class="casevo-verify-button"
+          data-casevo-verify="${index}"
+        >
+          Verify Supplier →
+        </button>
+
+
+        <div
+          class="casevo-verification-panel"
+          data-casevo-verification-panel="${index}"
+          hidden
+        ></div>
+
+
+        <div class="casevo-discovery-status">
+          ${escapeHtml(
+            verificationStatus
+          )}
         </div>
 
       </article>
-
     `;
   }
 
 
   /* ==========================================================
-     LOADING
+     DISCOVERY LOADING
      ========================================================== */
 
   function renderLoading() {
-
     showResults();
 
 
-    if (resultTitle) {
+    if (
+      resultTitle
+    ) {
       resultTitle.textContent =
         "Analyzing sourcing requirement…";
     }
@@ -2162,30 +2198,29 @@
 
     supplierGrid.innerHTML =
       `
-
         <div class="casevo-loading">
 
           CASEVO is structuring the sourcing brief
           and searching public supplier information…
 
         </div>
-
       `;
   }
 
 
   /* ==========================================================
-     ERROR
+     DISCOVERY ERROR
      ========================================================== */
 
   function renderError(
     message
   ) {
-
     showResults();
 
 
-    if (resultTitle) {
+    if (
+      resultTitle
+    ) {
       resultTitle.textContent =
         "Supplier discovery could not be completed.";
     }
@@ -2197,14 +2232,13 @@
 
     supplierGrid.innerHTML =
       `
-
         <div class="casevo-error">
 
           <strong>
             CASEVO AI / ERROR
           </strong>
 
-          <br>
+          <br><br>
 
           ${escapeHtml(
             firstNonEmpty(
@@ -2214,20 +2248,18 @@
           )}
 
         </div>
-
       `;
   }
 
 
   /* ==========================================================
-     RESULT
+     RENDER DISCOVERY RESULT
      ========================================================== */
 
   function renderResult(
     data,
     values
   ) {
-
     const result =
       normalizeResponse(
         data,
@@ -2235,15 +2267,22 @@
       );
 
 
+    state.lastFormValues =
+      values;
+
+    state.lastResult =
+      result;
+
+    state.suppliers =
+      result.matches;
+
+
     showResults();
 
 
-    /* --------------------------------------------------------
-       TITLE
-       -------------------------------------------------------- */
-
-    if (resultTitle) {
-
+    if (
+      resultTitle
+    ) {
       resultTitle.textContent =
         result.matches.length
 
@@ -2253,10 +2292,6 @@
     }
 
 
-    /* --------------------------------------------------------
-       BADGE
-       -------------------------------------------------------- */
-
     const badge =
       qs(
         ".analysis-badge",
@@ -2264,33 +2299,24 @@
       );
 
 
-    if (badge) {
-
+    if (
+      badge
+    ) {
       badge.textContent =
         "STRUCTURED BRIEF READY";
     }
 
-
-    /* --------------------------------------------------------
-       BRIEF
-       -------------------------------------------------------- */
 
     renderBrief(
       result
     );
 
 
-    /* --------------------------------------------------------
-       SUPPLIERS
-       -------------------------------------------------------- */
-
     if (
       !result.matches.length
     ) {
-
       supplierGrid.innerHTML =
         `
-
           <div class="casevo-empty">
 
             <strong>
@@ -2300,42 +2326,29 @@
             <br><br>
 
             CASEVO completed the sourcing analysis,
-            but no supplier candidates were returned
-            for this request.
-
-            Try adding more specific product,
-            material, manufacturing or certification
-            requirements.
+            but no supplier candidates passed the
+            current company-quality filters.
 
           </div>
-
         `;
 
     } else {
-
       supplierGrid.innerHTML =
         result.matches
-
           .map(
             function (
               supplier,
               index
             ) {
-
               return renderSupplierCard(
                 supplier,
                 index
               );
             }
           )
-
           .join("");
     }
 
-
-    /* --------------------------------------------------------
-       HUMAN VERIFICATION NOTE
-       -------------------------------------------------------- */
 
     const humanNote =
       qs(
@@ -2344,22 +2357,17 @@
       );
 
 
-    if (humanNote) {
-
+    if (
+      humanNote
+    ) {
       humanNote.style.display =
         "";
     }
 
 
-    /* --------------------------------------------------------
-       SCROLL TO EXISTING RESULT SECTION
-       -------------------------------------------------------- */
-
     setTimeout(
       function () {
-
         try {
-
           resultContainer
             .scrollIntoView({
               behavior:
@@ -2370,11 +2378,9 @@
             });
 
         } catch {
-
           resultContainer
             .scrollIntoView();
         }
-
       },
       80
     );
@@ -2382,36 +2388,31 @@
 
 
   /* ==========================================================
-     SEND REQUEST
+     SEND SOURCING REQUEST
      ========================================================== */
 
-  async function sendRequest(
+  async function sendSourcingRequest(
     values
   ) {
-
     const response =
       await fetch(
-        API_ENDPOINT,
+        SOURCING_ENDPOINT,
         {
-
           method:
             "POST",
 
           headers: {
-
             "Content-Type":
               "application/json",
 
-            "Accept":
+            Accept:
               "application/json"
-
           },
 
           body:
             JSON.stringify(
               values
             )
-
         }
       );
 
@@ -2424,7 +2425,6 @@
 
 
     try {
-
       data =
         rawText
           ? JSON.parse(
@@ -2433,7 +2433,6 @@
           : {};
 
     } catch {
-
       throw new Error(
         `CASEVO server returned invalid JSON (HTTP ${response.status}).`
       );
@@ -2444,21 +2443,13 @@
       !response.ok ||
       data.ok === false
     ) {
-
       throw new Error(
-
         firstNonEmpty(
-
           data.error,
-
           data.details,
-
           data.message,
-
           `CASEVO API request failed (HTTP ${response.status}).`
-
         )
-
       );
     }
 
@@ -2468,13 +2459,652 @@
 
 
   /* ==========================================================
-     SUBMIT
+     VERIFY SUPPLIER REQUEST
+     ========================================================== */
+
+  async function verifySupplier(
+    supplier,
+    product
+  ) {
+    const response =
+      await fetch(
+        VERIFY_ENDPOINT,
+        {
+          method:
+            "POST",
+
+          headers: {
+            "Content-Type":
+              "application/json",
+
+            Accept:
+              "application/json"
+          },
+
+          body:
+            JSON.stringify({
+              supplier,
+
+              product:
+                product ||
+                ""
+            })
+        }
+      );
+
+
+    const rawText =
+      await response.text();
+
+
+    let data;
+
+
+    try {
+      data =
+        rawText
+          ? JSON.parse(
+              rawText
+            )
+          : {};
+
+    } catch {
+      throw new Error(
+        `Verification server returned invalid JSON (HTTP ${response.status}).`
+      );
+    }
+
+
+    if (
+      !response.ok ||
+      data.ok === false
+    ) {
+      throw new Error(
+        firstNonEmpty(
+          data.error,
+          data.details,
+          data.message,
+          `Supplier verification failed (HTTP ${response.status}).`
+        )
+      );
+    }
+
+
+    return data;
+  }
+
+
+  /* ==========================================================
+     VERIFICATION VALUE
+     ========================================================== */
+
+  function verificationRow(
+    label,
+    value
+  ) {
+    let displayValue =
+      value;
+
+
+    if (
+      Array.isArray(
+        displayValue
+      )
+    ) {
+      displayValue =
+        displayValue.join(
+          ", "
+        );
+    }
+
+
+    displayValue =
+      firstNonEmpty(
+        displayValue,
+        "Not confirmed"
+      );
+
+
+    return `
+      <div class="casevo-verification-row">
+
+        <span>
+          ${escapeHtml(label)}
+        </span>
+
+        <strong>
+          ${escapeHtml(displayValue)}
+        </strong>
+
+      </div>
+    `;
+  }
+
+
+  /* ==========================================================
+     VERIFICATION SOURCES
+     ========================================================== */
+
+  function renderVerificationSources(
+    evidence
+  ) {
+    if (
+      !Array.isArray(
+        evidence
+      ) ||
+      !evidence.length
+    ) {
+      return "";
+    }
+
+
+    const sources =
+      evidence
+        .slice(
+          0,
+          6
+        )
+        .map(
+          function (
+            item,
+            index
+          ) {
+            const url =
+              safeUrl(
+                item?.url
+              );
+
+
+            const title =
+              firstNonEmpty(
+                item?.title,
+                item?.domain,
+                `Public source ${index + 1}`
+              );
+
+
+            const evidenceText =
+              truncate(
+                cleanWebText(
+                  item?.evidence
+                ),
+                280
+              );
+
+
+            return `
+              <div class="casevo-source-item">
+
+                ${
+                  url
+                    ? `
+                      <a
+                        href="${escapeAttr(url)}"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                      >
+                        ${escapeHtml(title)} →
+                      </a>
+                    `
+                    : `
+                      <strong>
+                        ${escapeHtml(title)}
+                      </strong>
+                    `
+                }
+
+                ${
+                  evidenceText
+                    ? `
+                      <div style="margin-top:5px;">
+                        ${escapeHtml(evidenceText)}
+                      </div>
+                    `
+                    : ""
+                }
+
+              </div>
+            `;
+          }
+        )
+        .join("");
+
+
+    return `
+      <div class="casevo-verification-source">
+
+        <details>
+
+          <summary>
+            View verification sources
+          </summary>
+
+          ${sources}
+
+        </details>
+
+      </div>
+    `;
+  }
+
+
+  /* ==========================================================
+     RENDER VERIFICATION RESULT
+     ========================================================== */
+
+  function renderVerificationResult(
+    panel,
+    data
+  ) {
+    const verification =
+      data?.verification ||
+      {};
+
+    const supplier =
+      data?.supplier ||
+      {};
+
+
+    const score =
+      normalizeScore(
+        verification.score
+      );
+
+
+    const certifications =
+      Array.isArray(
+        verification.certifications
+      )
+        ? verification.certifications
+        : (
+            Array.isArray(
+              supplier.certifications
+            )
+              ? supplier.certifications
+              : []
+          );
+
+
+    const status =
+      firstNonEmpty(
+        verification.status,
+        "Manual review required"
+      );
+
+
+    const summary =
+      cleanWebText(
+        verification.summary
+      );
+
+
+    panel.hidden =
+      false;
+
+
+    panel.innerHTML =
+      `
+        <div class="casevo-verification-eyebrow">
+          CASEVO / HUMAN VERIFICATION
+        </div>
+
+
+        <div class="casevo-verification-heading">
+
+          <h5>
+            Supplier verification research
+          </h5>
+
+          <div class="casevo-verification-score">
+            ${escapeHtml(score)}/100
+          </div>
+
+        </div>
+
+
+        <div class="casevo-verification-status">
+          ${escapeHtml(status)}
+        </div>
+
+
+        <div class="casevo-verification-list">
+
+          ${verificationRow(
+            "Company identity",
+            verification.companyIdentity
+          )}
+
+          ${verificationRow(
+            "Official website",
+            verification.officialWebsite
+          )}
+
+          ${verificationRow(
+            "Manufacturing capability",
+            verification.manufacturingCapability
+          )}
+
+          ${verificationRow(
+            "OEM / ODM",
+            verification.oemOdm
+          )}
+
+          ${verificationRow(
+            "MOQ",
+            verification.moq ||
+            supplier.moq
+          )}
+
+          ${verificationRow(
+            "Certifications",
+            certifications.length
+              ? certifications
+              : "Not confirmed"
+          )}
+
+          ${verificationRow(
+            "Export capability",
+            verification.exportCapability
+          )}
+
+          ${verificationRow(
+            "Contact",
+            verification.contact
+          )}
+
+          ${verificationRow(
+            "Location",
+            verification.location ||
+            supplier.location
+          )}
+
+        </div>
+
+
+        ${
+          summary
+            ? `
+              <div class="casevo-verification-summary">
+                ${escapeHtml(summary)}
+              </div>
+            `
+            : ""
+        }
+
+
+        ${renderVerificationSources(
+          data?.evidence
+        )}
+
+
+        <div
+          style="
+            margin-top:13px;
+            padding-top:10px;
+            border-top:1px solid var(--line,#d9d0c2);
+            font-size:8px;
+            line-height:1.45;
+            color:var(--muted,#756c61);
+          "
+        >
+          Public-web verification research only.
+          Final company, banking, certification,
+          production and commercial verification
+          is still required before placing an order.
+        </div>
+      `;
+  }
+
+
+  /* ==========================================================
+     VERIFICATION ERROR
+     ========================================================== */
+
+  function renderVerificationError(
+    panel,
+    message
+  ) {
+    panel.hidden =
+      false;
+
+
+    panel.innerHTML =
+      `
+        <div class="casevo-verification-eyebrow">
+          CASEVO / VERIFICATION ERROR
+        </div>
+
+        <div
+          style="
+            font-size:9px;
+            line-height:1.55;
+          "
+        >
+          ${escapeHtml(
+            firstNonEmpty(
+              message,
+              "Supplier verification could not be completed."
+            )
+          )}
+        </div>
+      `;
+  }
+
+
+  /* ==========================================================
+     VERIFY CLICK HANDLER
+     ========================================================== */
+
+  async function handleVerifyClick(
+    button
+  ) {
+    const index =
+      Number(
+        button.dataset
+          .casevoVerify
+      );
+
+
+    if (
+      !Number.isInteger(
+        index
+      ) ||
+      !state.suppliers[
+        index
+      ]
+    ) {
+      return;
+    }
+
+
+    const supplier =
+      state.suppliers[
+        index
+      ];
+
+
+    const panel =
+      qs(
+        `[data-casevo-verification-panel="${index}"]`,
+        supplierGrid
+      );
+
+
+    if (
+      !panel
+    ) {
+      return;
+    }
+
+
+    /*
+     * If already verified, toggle panel.
+     */
+
+    if (
+      panel.dataset
+        .casevoVerified ===
+      "true"
+    ) {
+      panel.hidden =
+        !panel.hidden;
+
+      return;
+    }
+
+
+    const originalText =
+      button.textContent;
+
+
+    button.disabled =
+      true;
+
+    button.textContent =
+      "Verifying…";
+
+
+    panel.hidden =
+      false;
+
+
+    panel.innerHTML =
+      `
+        <div class="casevo-verification-eyebrow">
+          CASEVO / HUMAN VERIFICATION
+        </div>
+
+        <div
+          style="
+            font-size:9px;
+            line-height:1.55;
+          "
+        >
+          Researching company identity,
+          manufacturing capability,
+          OEM/ODM, certifications,
+          MOQ, export capability and
+          public contact evidence…
+        </div>
+      `;
+
+
+    try {
+      const product =
+        firstNonEmpty(
+          state.lastResult?.product,
+          state.lastFormValues?.product,
+          state.lastFormValues?.requirement
+        );
+
+
+      const data =
+        await verifySupplier(
+          supplier,
+          product
+        );
+
+
+      console.log(
+        "CASEVO verification response:",
+        data
+      );
+
+
+      renderVerificationResult(
+        panel,
+        data
+      );
+
+
+      panel.dataset
+        .casevoVerified =
+        "true";
+
+
+      button.textContent =
+        "Verification Complete ✓";
+
+
+    } catch (
+      error
+    ) {
+      console.error(
+        "CASEVO verification failed:",
+        error
+      );
+
+
+      renderVerificationError(
+        panel,
+        error?.message
+      );
+
+
+      button.textContent =
+        "Retry Verification →";
+
+
+    } finally {
+      button.disabled =
+        false;
+
+
+      if (
+        !panel.dataset
+          .casevoVerified &&
+        button.textContent ===
+          "Verifying…"
+      ) {
+        button.textContent =
+          originalText;
+      }
+    }
+  }
+
+
+  /* ==========================================================
+     SUPPLIER GRID EVENT DELEGATION
+     ========================================================== */
+
+  supplierGrid.addEventListener(
+    "click",
+    function (
+      event
+    ) {
+      const button =
+        event.target.closest(
+          "[data-casevo-verify]"
+        );
+
+
+      if (
+        !button ||
+        !supplierGrid.contains(
+          button
+        )
+      ) {
+        return;
+      }
+
+
+      event.preventDefault();
+
+
+      handleVerifyClick(
+        button
+      );
+    }
+  );
+
+
+  /* ==========================================================
+     FORM SUBMIT
      ========================================================== */
 
   async function handleSubmit(
     event
   ) {
-
     event.preventDefault();
 
 
@@ -2482,21 +3112,10 @@
       collectValues();
 
 
-    console.log(
-      "CASEVO sourcing request:",
-      values
-    );
-
-
-    /* --------------------------------------------------------
-       VALIDATION
-       -------------------------------------------------------- */
-
     if (
       !values.requirement &&
       !values.product
     ) {
-
       renderError(
         "Please enter a sourcing requirement."
       );
@@ -2505,7 +3124,6 @@
       if (
         requirementField
       ) {
-
         requirementField.focus();
       }
 
@@ -2513,10 +3131,6 @@
       return;
     }
 
-
-    /* --------------------------------------------------------
-       LOADING
-       -------------------------------------------------------- */
 
     setLoading(
       true
@@ -2526,14 +3140,9 @@
     renderLoading();
 
 
-    /* --------------------------------------------------------
-       REQUEST
-       -------------------------------------------------------- */
-
     try {
-
       const data =
-        await sendRequest(
+        await sendSourcingRequest(
           values
         );
 
@@ -2550,8 +3159,9 @@
       );
 
 
-    } catch (error) {
-
+    } catch (
+      error
+    ) {
       console.error(
         "CASEVO sourcing error:",
         error
@@ -2559,19 +3169,12 @@
 
 
       renderError(
-
-        error &&
-        error.message
-
-          ? error.message
-
-          : "Unable to connect to CASEVO sourcing service."
-
+        error?.message ||
+        "Unable to connect to CASEVO sourcing service."
       );
 
 
     } finally {
-
       setLoading(
         false
       );
@@ -2584,11 +3187,12 @@
      ========================================================== */
 
   if (
-    form.dataset.casevoBound !==
+    form.dataset
+      .casevoBound !==
     "true"
   ) {
-
-    form.dataset.casevoBound =
+    form.dataset
+      .casevoBound =
       "true";
 
 
@@ -2604,54 +3208,66 @@
      ========================================================== */
 
   window.CASEVO =
-    window.CASEVO || {};
+    window.CASEVO ||
+    {};
 
 
   window.CASEVO.analyze =
     async function (
       request
     ) {
-
       if (
         !request ||
         typeof request !==
           "object"
       ) {
-
         throw new Error(
           "Invalid CASEVO sourcing request."
         );
       }
 
 
-      return sendRequest(
+      return sendSourcingRequest(
         request
       );
     };
 
 
+  window.CASEVO.verifySupplier =
+    async function (
+      supplier,
+      product
+    ) {
+      return verifySupplier(
+        supplier,
+        product
+      );
+    };
+
+
   /* ==========================================================
-     MOBILE MENU SUPPORT
+     MOBILE MENU
      ========================================================== */
 
   window.toggleMenu =
     window.toggleMenu ||
     function () {
-
       const nav =
         qs(
           ".nav-links"
         );
 
 
-      if (!nav) {
+      if (
+        !nav
+      ) {
         return;
       }
 
 
       nav.style.display =
         nav.style.display ===
-        "flex"
+          "flex"
 
           ? ""
 
@@ -2660,7 +3276,7 @@
 
 
   /* ==========================================================
-     CONTACT FORM SUPPORT
+     CONTACT FORM
      ========================================================== */
 
   window.submitContact =
@@ -2668,8 +3284,9 @@
     function (
       event
     ) {
-
-      if (event) {
+      if (
+        event
+      ) {
         event.preventDefault();
       }
 
@@ -2680,8 +3297,9 @@
         );
 
 
-      if (message) {
-
+      if (
+        message
+      ) {
         message.hidden =
           false;
 
@@ -2700,7 +3318,7 @@
      ========================================================== */
 
   console.log(
-    "CASEVO frontend initialized — existing #results layout preserved."
+    "CASEVO frontend v4.1.0 initialized — Supplier Verification enabled."
   );
 
 })();
