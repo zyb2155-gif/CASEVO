@@ -1,6 +1,6 @@
 /**
- * CASEVO v4.2.3.1 — Supplier Decision UI Hotfix
- * Fixes recursive/stray Decision panel rendering from v4.2.3.
+ * CASEVO v4.2.3.2 — Verification Decision Sync
+ * Keeps one Decision panel per supplier and refreshes it after Human Verification.
  */
 (() => {
   "use strict";
@@ -13,6 +13,7 @@
     .replaceAll("'", "&#039;");
 
   const list = (value) => Array.isArray(value) ? value.filter(Boolean) : [];
+  const clean = (value) => String(value ?? "").trim();
 
   function decisionFromSupplier(supplier = {}) {
     const nested = supplier.decision || {};
@@ -81,30 +82,112 @@
 
   let latestSuppliers = [];
 
-  function capturePayload(payload) {
+  function captureSourcingPayload(payload) {
     const arrays = supplierArrays(payload);
     if (!arrays.length) return;
-    latestSuppliers = arrays[0];
+    latestSuppliers = arrays[0].map((supplier) => ({ ...supplier }));
     scheduleApply();
   }
 
-  function findVerifyButton(card) {
-    return [...card.querySelectorAll("button")].find(
-      (button) => /verify supplier/i.test(button.textContent || "")
-    ) || null;
+  function normalizedIdentity(supplier = {}) {
+    return [
+      supplier.domain,
+      supplier.website,
+      supplier.sourceUrl,
+      supplier.authoritativeName,
+      supplier.companyName,
+      supplier.name
+    ].map((value) => clean(value).toLowerCase()).filter(Boolean);
+  }
+
+  function findSupplierIndex(requestSupplier = {}) {
+    if (!latestSuppliers.length) return -1;
+    const requestKeys = new Set(normalizedIdentity(requestSupplier));
+    if (!requestKeys.size) return -1;
+
+    return latestSuppliers.findIndex((supplier) =>
+      normalizedIdentity(supplier).some((key) => requestKeys.has(key))
+    );
+  }
+
+  function requestSupplierFromFetchArgs(args) {
+    try {
+      const options = args?.[1] || {};
+      const raw = options.body;
+      if (typeof raw !== "string") return {};
+      const body = JSON.parse(raw);
+      return body?.supplier || body || {};
+    } catch (_) {
+      return {};
+    }
+  }
+
+  function captureVerificationPayload(payload, requestSupplier) {
+    if (!payload?.ok) return;
+    const index = findSupplierIndex(requestSupplier);
+    if (index < 0) return;
+
+    const current = latestSuppliers[index] || {};
+    const verified = payload.supplier || {};
+    const verification = payload.verification || {};
+    const decision = payload.decision || verified.decision || {};
+    const qualification = payload.qualification || verified.qualification || {};
+
+    latestSuppliers[index] = {
+      ...current,
+      ...verified,
+
+      verificationScore:
+        verified.verificationScore ?? verification.score ?? current.verificationScore,
+      verificationStatus:
+        verified.verificationStatus ?? verification.status ?? current.verificationStatus,
+      verificationSignals:
+        verified.verificationSignals ?? verification.signals ?? current.verificationSignals,
+
+      qualificationScore:
+        verified.qualificationScore ?? qualification.score ?? current.qualificationScore,
+      qualificationStatus:
+        verified.qualificationStatus ?? qualification.status ?? current.qualificationStatus,
+      qualificationStrengths:
+        verified.qualificationStrengths ?? qualification.strengths ?? current.qualificationStrengths,
+      qualificationGaps:
+        verified.qualificationGaps ?? qualification.gaps ?? current.qualificationGaps,
+      recommendedAction:
+        verified.recommendedAction ?? qualification.recommendedAction ?? current.recommendedAction,
+      qualification:
+        Object.keys(qualification).length ? qualification : current.qualification,
+
+      decisionScore:
+        verified.decisionScore ?? decision.score ?? current.decisionScore,
+      decisionTier:
+        verified.decisionTier ?? decision.tier ?? current.decisionTier,
+      decisionReasons:
+        verified.decisionReasons ?? decision.reasons ?? current.decisionReasons,
+      riskFlags:
+        verified.riskFlags ?? decision.riskFlags ?? current.riskFlags,
+      nextBestAction:
+        verified.nextBestAction ?? decision.nextBestAction ?? current.nextBestAction,
+      decision:
+        Object.keys(decision).length ? decision : current.decision
+    };
+
+    scheduleApply();
+  }
+
+  function decisionAnchor(card) {
+    return [...card.querySelectorAll("button")].find((button) =>
+      /verify supplier|verification complete/i.test(button.textContent || "")
+    ) || card.querySelector(".casevo-decision-panel");
   }
 
   function cards() {
     const grid = document.getElementById("supplierGrid");
     if (!grid) return [];
 
-    // Remove pollution left by v4.2.3 where Decision panels were inserted as grid siblings.
     grid.querySelectorAll(":scope > .casevo-decision-panel").forEach((panel) => panel.remove());
 
     return [...grid.children].filter((el) =>
-      el.nodeType === 1 &&
-      !el.classList.contains("casevo-decision-panel") &&
-      Boolean(findVerifyButton(el))
+      el.nodeType === 1 && !el.classList.contains("casevo-decision-panel")
     );
   }
 
@@ -116,19 +199,19 @@
     const existing = card.querySelector(":scope > .casevo-decision-panel");
     if (existing && existing.dataset.casevoDecisionKey === key) return;
 
-    if (existing) existing.remove();
-
-    const verifyButton = findVerifyButton(card);
-    if (!verifyButton) return;
-
-    // Always insert INSIDE the supplier card. Never use closest('div'), which can
-    // resolve to the supplier card itself and create a new direct child of the grid.
-    verifyButton.insertAdjacentHTML("beforebegin", decisionMarkup(d));
-    const inserted = card.querySelector(":scope > .casevo-decision-panel") ||
-      verifyButton.previousElementSibling;
-    if (inserted?.classList?.contains("casevo-decision-panel")) {
-      inserted.dataset.casevoDecisionKey = key;
+    if (existing) {
+      existing.outerHTML = decisionMarkup(d);
+      const replaced = card.querySelector(":scope > .casevo-decision-panel");
+      if (replaced) replaced.dataset.casevoDecisionKey = key;
+      return;
     }
+
+    const anchor = decisionAnchor(card);
+    if (!anchor) return;
+
+    anchor.insertAdjacentHTML("beforebegin", decisionMarkup(d));
+    const inserted = card.querySelector(":scope > .casevo-decision-panel");
+    if (inserted) inserted.dataset.casevoDecisionKey = key;
   }
 
   function applyDecisionUI() {
@@ -154,20 +237,28 @@
 
   const nativeFetch = window.fetch.bind(window);
   window.fetch = async (...args) => {
+    const url = typeof args[0] === "string" ? args[0] : args[0]?.url || "";
+    const requestSupplier = /\/api\/verify-supplier(?:\?|$)/.test(url)
+      ? requestSupplierFromFetchArgs(args)
+      : {};
+
     const response = await nativeFetch(...args);
+
     try {
-      const url = typeof args[0] === "string" ? args[0] : args[0]?.url || "";
       if (/\/api\/sourcing(?:\?|$)/.test(url)) {
-        response.clone().json().then(capturePayload).catch(() => {});
+        response.clone().json().then(captureSourcingPayload).catch(() => {});
+      } else if (/\/api\/verify-supplier(?:\?|$)/.test(url)) {
+        response.clone().json()
+          .then((payload) => captureVerificationPayload(payload, requestSupplier))
+          .catch(() => {});
       }
     } catch (_) {}
+
     return response;
   };
 
   function start() {
     installStyles();
-    // No MutationObserver here: the previous observer reacted to its own DOM
-    // changes and recursively scheduled more Decision rendering.
   }
 
   if (document.readyState === "loading") {

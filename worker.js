@@ -1,6 +1,6 @@
 /**
  * CASEVO AI SOURCING ENGINE
- * Version 4.2.3 — Supplier Decision Intelligence
+ * Version 4.2.3.2 — Verification Decision Sync
  *
  * GET  /api/health
  * POST /api/sourcing
@@ -9,7 +9,7 @@
  * Required secret: TAVILY_API_KEY
  */
 
-const VERSION = "4.2.3";
+const VERSION = "4.2.3.2";
 const TAVILY_ENDPOINT = "https://api.tavily.com/search";
 const SEARCH_TIMEOUT_MS = 15000;
 const RESULTS_PER_QUERY = 10;
@@ -498,6 +498,12 @@ async function handleSourcingRequest(request, env) {
         combined
     };
 
+    const postVerification =
+      buildPostVerificationDecision(
+        supplier,
+        evidence
+      );
+
     return jsonResponse({
       ok: true,
 
@@ -763,6 +769,10 @@ async function handleSupplierVerification(request, env) {
       message:
         "CASEVO supplier verification research completed.",
 
+      qualification: postVerification.qualification,
+
+      decision: postVerification.decision,
+
       supplier: {
         name:
           evidence.companyName,
@@ -824,7 +834,52 @@ async function handleSupplierVerification(request, env) {
           evidence.manufacturingCapability,
 
         oemOdm:
-          evidence.oemOdm
+          evidence.oemOdm,
+
+        verificationScore:
+          evidence.score,
+
+        verificationStatus:
+          evidence.status,
+
+        verificationSignals:
+          postVerification.supplier.verificationSignals,
+
+        qualificationScore:
+          postVerification.qualification.score,
+
+        qualificationStatus:
+          postVerification.qualification.status,
+
+        qualificationStrengths:
+          postVerification.qualification.strengths,
+
+        qualificationGaps:
+          postVerification.qualification.gaps,
+
+        recommendedAction:
+          postVerification.qualification.recommendedAction,
+
+        qualification:
+          postVerification.qualification,
+
+        decisionScore:
+          postVerification.decision.score,
+
+        decisionTier:
+          postVerification.decision.tier,
+
+        decisionReasons:
+          postVerification.decision.reasons,
+
+        riskFlags:
+          postVerification.decision.riskFlags,
+
+        nextBestAction:
+          postVerification.decision.nextBestAction,
+
+        decision:
+          postVerification.decision
       },
 
       verification: {
@@ -2593,6 +2648,163 @@ function resolveAuthoritativeIdentity({
         "none"
     }
   );
+}
+
+
+function buildPostVerificationDecision(
+  discoverySupplier = {},
+  evidence = {}
+) {
+  const verificationSignals =
+    unique([
+      ...(Array.isArray(evidence.signals)
+        ? evidence.signals
+        : []),
+
+      evidence.manufacturingCapability &&
+      !/not confirmed|not determined|unknown/i.test(
+        clean(evidence.manufacturingCapability)
+      )
+        ? "Manufacturing capability evidence"
+        : "",
+
+      evidence.exportCapability &&
+      !/not confirmed|not determined|unknown/i.test(
+        clean(evidence.exportCapability)
+      )
+        ? "Commercial capability / export evidence"
+        : ""
+    ].filter(Boolean));
+
+  const verifiedSupplier = {
+    ...discoverySupplier,
+
+    name:
+      evidence.companyName ||
+      discoverySupplier.name,
+
+    companyName:
+      evidence.companyName ||
+      discoverySupplier.companyName,
+
+    companyIdentityConfirmed:
+      evidence.companyName !==
+      UNKNOWN_COMPANY,
+
+    identityType:
+      evidence.identityType ||
+      discoverySupplier.identityType,
+
+    authoritativeName:
+      evidence.authoritativeName ||
+      evidence.companyName ||
+      discoverySupplier.authoritativeName,
+
+    identityConfidence:
+      evidence.identityConfidence ??
+      discoverySupplier.identityConfidence,
+
+    identityEvidence:
+      evidence.identityEvidence ||
+      discoverySupplier.identityEvidence,
+
+    website:
+      evidence.officialWebsite ||
+      discoverySupplier.website,
+
+    domain:
+      evidence.domain ||
+      discoverySupplier.domain,
+
+    location:
+      evidence.location ||
+      discoverySupplier.location,
+
+    contactEmail:
+      evidence.email ||
+      "",
+
+    contactPhone:
+      evidence.phone ||
+      "",
+
+    certifications:
+      Array.isArray(evidence.certifications)
+        ? evidence.certifications
+        : [],
+
+    moq:
+      evidence.moq ||
+      "",
+
+    verificationScore:
+      clampNumber(
+        evidence.score,
+        0,
+        100
+      ),
+
+    verificationStatus:
+      evidence.status ||
+      discoverySupplier.verificationStatus,
+
+    verificationSignals
+  };
+
+  const qualification =
+    calculateQualificationProfile(
+      verifiedSupplier
+    );
+
+  verifiedSupplier.qualificationScore =
+    qualification.score;
+
+  verifiedSupplier.qualificationStatus =
+    qualification.status;
+
+  verifiedSupplier.qualificationStrengths =
+    qualification.strengths;
+
+  verifiedSupplier.qualificationGaps =
+    qualification.gaps;
+
+  verifiedSupplier.recommendedAction =
+    qualification.recommendedAction;
+
+  verifiedSupplier.qualification =
+    qualification;
+
+  const decision =
+    calculateSupplierDecision(
+      verifiedSupplier
+    );
+
+  verifiedSupplier.decisionScore =
+    decision.score;
+
+  verifiedSupplier.decisionTier =
+    decision.tier;
+
+  verifiedSupplier.decisionReasons =
+    decision.reasons;
+
+  verifiedSupplier.riskFlags =
+    decision.riskFlags;
+
+  verifiedSupplier.nextBestAction =
+    decision.nextBestAction;
+
+  verifiedSupplier.decision =
+    decision;
+
+  return {
+    supplier:
+      verifiedSupplier,
+
+    qualification,
+
+    decision
+  };
 }
 
 
