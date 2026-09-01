@@ -1,6 +1,6 @@
 /**
  * CASEVO AI SOURCING ENGINE
- * Version 4.2.3.3 — Search Reliability Hotfix
+ * Version 4.2.3.4 — Search Diagnostics
  *
  * GET  /api/health
  * POST /api/sourcing
@@ -9,7 +9,7 @@
  * Required secret: TAVILY_API_KEY
  */
 
-const VERSION = "4.2.3.3";
+const VERSION = "4.2.3.4";
 const TAVILY_ENDPOINT = "https://api.tavily.com/search";
 const SEARCH_TIMEOUT_MS = 15000;
 const TAVILY_MAX_ATTEMPTS = 3;
@@ -572,6 +572,20 @@ async function handleSourcingRequest(request, env) {
       error
     );
 
+    const diagnosticCategory =
+      clean(error?.category || "search_failure");
+
+    const diagnosticStatus =
+      Number(error?.status || 0) || null;
+
+    const diagnosticAttempts =
+      Array.isArray(error?.searchDiagnostics)
+        ? error.searchDiagnostics.length
+        : null;
+
+    const diagnosticMessage =
+      `Search diagnostic: category=${diagnosticCategory}; status=${diagnosticStatus ?? "none"}; attempts=${diagnosticAttempts ?? "unknown"}`;
+
     return jsonResponse(
       {
         ok: false,
@@ -584,15 +598,16 @@ async function handleSourcingRequest(request, env) {
             error?.message ||
             "Unknown search error."
           ),
+
+        diagnosticMessage,
+
         searchDiagnostics: {
           category:
-            clean(error?.category || "search_failure"),
+            diagnosticCategory,
           status:
-            Number(error?.status || 0) || null,
+            diagnosticStatus,
           attempts:
-            Array.isArray(error?.searchDiagnostics)
-              ? error.searchDiagnostics.length
-              : null
+            diagnosticAttempts
         }
       },
       502
