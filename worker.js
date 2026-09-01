@@ -1,6 +1,7 @@
+/* CASEVO v4.2.4 Supplier Intelligence Upgrade */
 /**
  * CASEVO AI SOURCING ENGINE
- * Version 4.2.3.7 — Supplier Discovery Engine Upgrade
+ * Version 4.2.4 — Supplier Discovery Engine Upgrade
  *
  * GET  /api/health
  * GET  /api/search-diagnostic
@@ -10,7 +11,7 @@
  * Required secret: TAVILY_API_KEY
  */
 
-const VERSION = "4.2.3.7";
+const VERSION = "4.2.4";
 const TAVILY_ENDPOINT = "https://api.tavily.com/search";
 const SEARCH_TIMEOUT_MS = 15000;
 const TAVILY_MAX_ATTEMPTS = 3;
@@ -1236,6 +1237,49 @@ function deduplicateVerificationResults(results) {
     0,
     20
   );
+}
+
+
+function buildSupplierIntelligence(supplier = {}, evidence = {}) {
+  const text = JSON.stringify({
+    supplier,
+    evidence
+  }).toLowerCase();
+
+  const identity =
+    /factory|manufacturer|manufacturing|production line/.test(text)
+      ? "manufacturer"
+      : /trading|trader|agent|import/.test(text)
+        ? "trading_company"
+        : "unknown";
+
+  const signals = {
+    officialWebsite: /website|domain|official/.test(text),
+    manufacturing: /factory|manufacturer|production/.test(text),
+    oemOdm: /oem|odm|custom/.test(text),
+    export: /export|shipping|international/.test(text),
+    certification: /iso|reach|certificate/.test(text)
+  };
+
+  const score =
+    Object.values(signals).filter(Boolean).length * 18 + 10;
+
+  return {
+    companyType: identity,
+    confidence: Math.min(score, 100),
+    signals,
+    riskFlags: [
+      ...(!signals.officialWebsite ? ["official website missing"] : []),
+      ...(!signals.manufacturing ? ["manufacturing evidence limited"] : []),
+      ...(!signals.export ? ["export capability unconfirmed"] : [])
+    ],
+    recommendation:
+      score >= 75
+        ? "PRIMARY CANDIDATE"
+        : score >= 45
+          ? "SECONDARY CANDIDATE"
+          : "REJECT / REVIEW REQUIRED"
+  };
 }
 
 function buildVerificationEvidence(
