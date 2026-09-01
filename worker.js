@@ -1,6 +1,6 @@
 /**
  * CASEVO AI SOURCING ENGINE
- * Version 4.2.0 — Supplier Identity Intelligence
+ * Version 4.2.1 — Supplier Relevance Intelligence
  *
  * GET  /api/health
  * POST /api/sourcing
@@ -9,7 +9,7 @@
  * Required secret: TAVILY_API_KEY
  */
 
-const VERSION = "4.2.0";
+const VERSION = "4.2.1";
 const TAVILY_ENDPOINT = "https://api.tavily.com/search";
 const SEARCH_TIMEOUT_MS = 15000;
 const RESULTS_PER_QUERY = 10;
@@ -1949,6 +1949,12 @@ function normalizeSupplierResults(
       extractedName ||
       UNKNOWN_COMPANY;
 
+    const relevance =
+      calculateSupplierRelevanceProfile(
+        result,
+        analysis
+      );
+
     const matchScore =
       calculateMatchScore(
         result,
@@ -1956,7 +1962,11 @@ function normalizeSupplierResults(
       );
 
     if (
-      matchScore < 45
+      matchScore < 45 ||
+      (
+        relevance.isSpecificComponentQuery &&
+        relevance.score < 18
+      )
     ) {
       continue;
     }
@@ -1974,6 +1984,7 @@ function normalizeSupplierResults(
       companyName,
       gate,
       matchScore,
+      relevance,
       verification,
       supplierType:
         detectSupplierType(
@@ -2683,6 +2694,21 @@ function buildSupplierRecord(
 
     matchScore:
       candidate.matchScore,
+
+    relevanceScore:
+      candidate.relevance?.score ?? 0,
+
+    relevanceTier:
+      candidate.relevance?.tier || "unknown",
+
+    relevanceSignals: {
+      directComponent:
+        candidate.relevance?.directComponentSignals ?? 0,
+      wholeShoe:
+        candidate.relevance?.wholeShoeSignals ?? 0,
+      brandRetail:
+        candidate.relevance?.brandRetailSignals ?? 0
+    },
 
     verificationScore:
       candidate.verification.score,
@@ -3650,6 +3676,237 @@ function companyNameFromDomain(
   return candidate;
 }
 
+function calculateSupplierRelevanceProfile(
+  result,
+  analysis
+) {
+  const title =
+    clean(
+      result?.title
+    );
+
+  const content =
+    sanitizeWebText(
+      result?.content ||
+      result?.raw_content ||
+      ""
+    );
+
+  const haystack =
+    `${title} ${content}`
+      .toLowerCase();
+
+  const product =
+    clean(
+      analysis?.product ||
+      analysis?.requirement ||
+      ""
+    ).toLowerCase();
+
+  const specificComponentQuery =
+    /\b(?:shoe\s+upper|footwear\s+upper|leather\s+upper|upper\s+leather|upper\s+material|footwear\s+components?|shoe\s+components?|outsole|midsole|insole|shoe\s+lining|footwear\s+lining|shoe\s+laces?|eyelets?)\b/i
+      .test(
+        product
+      );
+
+  const directComponentPatterns = [
+    /\bshoe\s+uppers?\b/i,
+    /\bfootwear\s+uppers?\b/i,
+    /\bleather\s+uppers?\b/i,
+    /\bupper\s+leather\b/i,
+    /\bupper\s+materials?\b/i,
+    /\bfootwear\s+components?\b/i,
+    /\bshoe\s+components?\b/i,
+    /\bupper\s+(?:manufactur(?:e|er|ing)|production|factory)\b/i,
+    /\b(?:manufactur(?:e|er|ing)|production|factory)\s+(?:of\s+)?(?:shoe|footwear)\s+uppers?\b/i
+  ];
+
+  const exactMaterialPatterns = [
+    /\bfull[\s-]?grain\b/i,
+    /\bcow(?:hide)?\s+leather\b/i,
+    /\bgenuine\s+leather\b/i,
+    /\bupper\s+leather\b/i
+  ];
+
+  const wholeShoePatterns = [
+    /\bfinished\s+(?:shoes?|footwear)\b/i,
+    /\b(?:men'?s|women'?s)\s+(?:leather\s+)?shoes?\b/i,
+    /\bcasual\s+shoes?\b/i,
+    /\bdress\s+shoes?\b/i,
+    /\bsneakers?\b/i,
+    /\bshoe\s+manufacturer\b/i,
+    /\bfootwear\s+manufacturer\b/i
+  ];
+
+  const brandRetailPatterns = [
+    /\bnew\s+arrivals?\b/i,
+    /\bshop\s+now\b/i,
+    /\bretail\b/i,
+    /\bcollection\b/i,
+    /\bbrand\s+story\b/i,
+    /\bstore\b/i
+  ];
+
+  const directCount =
+    directComponentPatterns.filter(
+      pattern =>
+        pattern.test(
+          haystack
+        )
+    ).length;
+
+  const materialCount =
+    exactMaterialPatterns.filter(
+      pattern =>
+        pattern.test(
+          haystack
+        )
+    ).length;
+
+  const wholeShoeCount =
+    wholeShoePatterns.filter(
+      pattern =>
+        pattern.test(
+          haystack
+        )
+    ).length;
+
+  const brandRetailCount =
+    brandRetailPatterns.filter(
+      pattern =>
+        pattern.test(
+          haystack
+        )
+    ).length;
+
+  const manufacturingCount =
+    countSignals(
+      haystack,
+      MANUFACTURER_SIGNALS
+    );
+
+  const genericTokenRelevance =
+    calculateProductRelevance(
+      haystack,
+      product
+    );
+
+  let score;
+
+  if (
+    specificComponentQuery
+  ) {
+    score =
+      18;
+
+    score +=
+      Math.min(
+        58,
+        directCount * 16
+      );
+
+    score +=
+      Math.min(
+        14,
+        materialCount * 7
+      );
+
+    if (
+      directCount > 0 &&
+      manufacturingCount > 0
+    ) {
+      score +=
+        12;
+    }
+
+    if (
+      directCount === 0
+    ) {
+      score -=
+        Math.min(
+          24,
+          wholeShoeCount * 8
+        );
+    } else if (
+      wholeShoeCount > 0
+    ) {
+      score -=
+        Math.min(
+          8,
+          wholeShoeCount * 2
+        );
+    }
+
+    score -=
+      Math.min(
+        24,
+        brandRetailCount * 8
+      );
+
+    score +=
+      Math.min(
+        8,
+        genericTokenRelevance
+      );
+  } else {
+    score =
+      25 +
+      Math.min(
+        55,
+        genericTokenRelevance * 10
+      ) +
+      Math.min(
+        15,
+        manufacturingCount * 5
+      ) -
+      Math.min(
+        20,
+        brandRetailCount * 5
+      );
+  }
+
+  score =
+    Math.max(
+      0,
+      Math.min(
+        100,
+        Math.round(
+          score
+        )
+      )
+    );
+
+  const tier =
+    score >= 80
+      ? "high"
+      : score >= 55
+        ? "medium"
+        : score >= 35
+          ? "low"
+          : "weak";
+
+  return {
+    score,
+    tier,
+
+    isSpecificComponentQuery:
+      specificComponentQuery,
+
+    directComponentSignals:
+      directCount,
+
+    wholeShoeSignals:
+      wholeShoeCount,
+
+    brandRetailSignals:
+      brandRetailCount,
+
+    manufacturingSignals:
+      manufacturingCount
+  };
+}
+
+
 function calculateMatchScore(
   result,
   analysis
@@ -3697,11 +3954,10 @@ function calculateMatchScore(
       CHINA_SIGNALS
     );
 
-  const productRelevance =
-    calculateProductRelevance(
-      combined,
-      analysis.product ||
-      analysis.requirement
+  const relevance =
+    calculateSupplierRelevanceProfile(
+      result,
+      analysis
     );
 
   score +=
@@ -3724,9 +3980,33 @@ function calculateMatchScore(
 
   score +=
     Math.min(
-      16,
-      productRelevance * 3
+      28,
+      Math.round(
+        relevance.score *
+        0.28
+      )
     );
+
+  if (
+    relevance.isSpecificComponentQuery
+  ) {
+    if (
+      relevance.score >= 80
+    ) {
+      score +=
+        8;
+    } else if (
+      relevance.score < 35
+    ) {
+      score -=
+        25;
+    } else if (
+      relevance.score < 55
+    ) {
+      score -=
+        15;
+    }
+  }
 
   if (
     chinaCount > 0
@@ -3756,7 +4036,7 @@ function calculateMatchScore(
   return Math.min(
     98,
     Math.max(
-      45,
+      20,
       Math.round(
         score
       )
