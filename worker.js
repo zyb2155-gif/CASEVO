@@ -1,15 +1,16 @@
 /**
  * CASEVO AI SOURCING ENGINE
- * Version 4.2.3.4 — Search Diagnostics
+ * Version 4.2.3.6 — Direct Tavily Diagnostic
  *
  * GET  /api/health
+ * GET  /api/search-diagnostic
  * POST /api/sourcing
  * POST /api/verify-supplier
  *
  * Required secret: TAVILY_API_KEY
  */
 
-const VERSION = "4.2.3.4";
+const VERSION = "4.2.3.6";
 const TAVILY_ENDPOINT = "https://api.tavily.com/search";
 const SEARCH_TIMEOUT_MS = 15000;
 const TAVILY_MAX_ATTEMPTS = 3;
@@ -321,6 +322,20 @@ export default {
       });
     }
 
+    if (url.pathname === "/api/search-diagnostic") {
+      if (request.method !== "GET") {
+        return jsonResponse(
+          {
+            ok: false,
+            error: "Method not allowed. Use GET /api/search-diagnostic."
+          },
+          405
+        );
+      }
+
+      return handleSearchDiagnostic(env);
+    }
+
     if (url.pathname === "/api/sourcing") {
       if (request.method !== "POST") {
         return jsonResponse(
@@ -367,6 +382,95 @@ export default {
     );
   }
 };
+
+async function handleSearchDiagnostic(env) {
+  const diagnosticQuery =
+    "China leather shoe upper manufacturer official website";
+
+  if (!env.TAVILY_API_KEY) {
+    return jsonResponse(
+      {
+        ok: false,
+        service: "CASEVO Direct Tavily Diagnostic",
+        version: VERSION,
+        provider: "Tavily",
+        diagnosticQuery,
+        apiKeyConfigured: false,
+        category: "configuration",
+        status: null,
+        attempts: 0,
+        details: "TAVILY_API_KEY is not configured."
+      },
+      500
+    );
+  }
+
+  try {
+    const data =
+      await tavilySearch(
+        diagnosticQuery,
+        env.TAVILY_API_KEY
+      );
+
+    const diagnostics =
+      Array.isArray(data?.searchDiagnostics)
+        ? data.searchDiagnostics
+        : [];
+
+    const last =
+      diagnostics.length
+        ? diagnostics[diagnostics.length - 1]
+        : {};
+
+    return jsonResponse({
+      ok: true,
+      service: "CASEVO Direct Tavily Diagnostic",
+      version: VERSION,
+      provider: "Tavily",
+      diagnosticQuery,
+      apiKeyConfigured: true,
+      category: "success",
+      status: Number(last?.status || 200),
+      attempts: diagnostics.length || 1,
+      resultsCount: Array.isArray(data?.results)
+        ? data.results.length
+        : 0,
+      searchDiagnostics: diagnostics.map((item) => ({
+        attempt: item?.attempt ?? null,
+        ok: Boolean(item?.ok),
+        status: Number(item?.status || 0) || null,
+        category: clean(item?.category || (item?.ok ? "success" : "unknown"))
+      }))
+    });
+  } catch (error) {
+    const diagnostics =
+      Array.isArray(error?.searchDiagnostics)
+        ? error.searchDiagnostics
+        : [];
+
+    return jsonResponse(
+      {
+        ok: false,
+        service: "CASEVO Direct Tavily Diagnostic",
+        version: VERSION,
+        provider: "Tavily",
+        diagnosticQuery,
+        apiKeyConfigured: true,
+        category: clean(error?.category || "search_failure"),
+        status: Number(error?.status || 0) || null,
+        attempts: diagnostics.length || null,
+        details: clean(error?.message || "Unknown Tavily diagnostic failure."),
+        searchDiagnostics: diagnostics.map((item) => ({
+          attempt: item?.attempt ?? null,
+          ok: Boolean(item?.ok),
+          status: Number(item?.status || 0) || null,
+          category: clean(item?.category || "unknown")
+        }))
+      },
+      502
+    );
+  }
+}
 
 async function handleSourcingRequest(request, env) {
   let body;
@@ -499,12 +603,6 @@ async function handleSourcingRequest(request, env) {
         normalized.requirement ||
         combined
     };
-
-    const postVerification =
-      buildPostVerificationDecision(
-        supplier,
-        evidence
-      );
 
     return jsonResponse({
       ok: true,
@@ -785,6 +883,12 @@ async function handleSupplierVerification(request, env) {
               supplier.identityEvidence
           }
         }
+      );
+
+    const postVerification =
+      buildPostVerificationDecision(
+        supplier,
+        evidence
       );
 
     return jsonResponse({
