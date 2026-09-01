@@ -1,6 +1,6 @@
 /**
  * CASEVO AI SOURCING ENGINE
- * Version 4.2.3.2 — Verification Decision Sync
+ * Version 4.2.3.3 — Search Reliability Hotfix
  *
  * GET  /api/health
  * POST /api/sourcing
@@ -9,9 +9,11 @@
  * Required secret: TAVILY_API_KEY
  */
 
-const VERSION = "4.2.3.2";
+const VERSION = "4.2.3.3";
 const TAVILY_ENDPOINT = "https://api.tavily.com/search";
 const SEARCH_TIMEOUT_MS = 15000;
+const TAVILY_MAX_ATTEMPTS = 3;
+const TAVILY_RETRY_BASE_MS = 650;
 const RESULTS_PER_QUERY = 10;
 const MAX_SEARCH_QUERIES = 4;
 const MAX_SUPPLIERS = 6;
@@ -575,13 +577,23 @@ async function handleSourcingRequest(request, env) {
         ok: false,
 
         error:
-          "Supplier web search failed.",
+          "Supplier web search temporarily unavailable.",
 
         details:
           clean(
             error?.message ||
             "Unknown search error."
-          )
+          ),
+        searchDiagnostics: {
+          category:
+            clean(error?.category || "search_failure"),
+          status:
+            Number(error?.status || 0) || null,
+          attempts:
+            Array.isArray(error?.searchDiagnostics)
+              ? error.searchDiagnostics.length
+              : null
+        }
       },
       502
     );
@@ -1789,110 +1801,143 @@ function buildSearchQueries(
     );
 }
 
+function isRetryableSearchStatus(status) {
+  return status === 408 ||
+    status === 425 ||
+    status === 429 ||
+    status === 500 ||
+    status === 502 ||
+    status === 503 ||
+    status === 504;
+}
+
+function searchFailureCategory(status, error) {
+  if (error?.name === "AbortError") return "timeout";
+  if (status === 429) return "rate_limited";
+  if (status === 401 || status === 403) return "authentication";
+  if (status >= 500) return "provider_unavailable";
+  if (status >= 400) return "request_rejected";
+  return "network";
+}
+
+function sleep(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+function retryDelayMs(attempt, response) {
+  const retryAfter = Number(response?.headers?.get?.("Retry-After"));
+  if (Number.isFinite(retryAfter) && retryAfter > 0) {
+    return Math.min(retryAfter * 1000, 5000);
+  }
+  return Math.min(TAVILY_RETRY_BASE_MS * (2 ** Math.max(0, attempt - 1)), 4000);
+}
+
 async function tavilySearch(
   query,
   apiKey
 ) {
-  const controller =
-    new AbortController();
+  const diagnostics = [];
+  let lastError = null;
 
-  const timeout =
-    setTimeout(
-      () =>
-        controller.abort(),
-      SEARCH_TIMEOUT_MS
-    );
+  for (let attempt = 1; attempt <= TAVILY_MAX_ATTEMPTS; attempt += 1) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), SEARCH_TIMEOUT_MS);
+    let response = null;
 
-  try {
-    const response =
-      await fetch(
+    try {
+      response = await fetch(
         TAVILY_ENDPOINT,
         {
-          method:
-            "POST",
-
+          method: "POST",
           headers: {
-            "Content-Type":
-              "application/json",
-
-            Authorization:
-              `Bearer ${apiKey}`
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${apiKey}`
           },
-
-          body:
-            JSON.stringify({
-              query:
-                clean(
-                  query
-                ).slice(
-                  0,
-                  MAX_QUERY_LENGTH
-                ),
-
-              topic:
-                "general",
-
-              search_depth:
-                "basic",
-
-              max_results:
-                RESULTS_PER_QUERY,
-
-              include_answer:
-                false,
-
-              include_raw_content:
-                true,
-
-              include_images:
-                false,
-
-              exclude_domains:
-                EXCLUDED_DOMAINS
-            }),
-
-          signal:
-            controller.signal
+          body: JSON.stringify({
+            query: clean(query).slice(0, MAX_QUERY_LENGTH),
+            topic: "general",
+            search_depth: "basic",
+            max_results: RESULTS_PER_QUERY,
+            include_answer: false,
+            include_raw_content: true,
+            include_images: false,
+            exclude_domains: EXCLUDED_DOMAINS
+          }),
+          signal: controller.signal
         }
       );
 
-    const data =
-      await safeJson(
-        response
-      );
+      const data = await safeJson(response);
 
-    if (
-      !response.ok
-    ) {
-      throw new Error(
+      if (response.ok) {
+        return {
+          ...data,
+          _query: query,
+          searchDiagnostics: diagnostics.concat([{
+            attempt,
+            ok: true,
+            status: response.status
+          }])
+        };
+      }
+
+      const category = searchFailureCategory(response.status);
+      const message = clean(
         data?.detail ||
         data?.error ||
         `Tavily API returned HTTP ${response.status}`
       );
+
+      diagnostics.push({
+        attempt,
+        ok: false,
+        status: response.status,
+        category,
+        message
+      });
+
+      lastError = new Error(message);
+      lastError.status = response.status;
+      lastError.category = category;
+      lastError.searchDiagnostics = diagnostics;
+
+      if (!isRetryableSearchStatus(response.status) || attempt >= TAVILY_MAX_ATTEMPTS) {
+        throw lastError;
+      }
+
+      await sleep(retryDelayMs(attempt, response));
+    } catch (error) {
+      const isAbort = error?.name === "AbortError";
+      const status = Number(error?.status || response?.status || 0);
+      const category = error?.category || searchFailureCategory(status, error);
+
+      if (!diagnostics.length || diagnostics[diagnostics.length - 1]?.attempt !== attempt) {
+        diagnostics.push({
+          attempt,
+          ok: false,
+          status: status || null,
+          category,
+          message: isAbort ? "Supplier search timed out." : clean(error?.message || "Network search failure.")
+        });
+      }
+
+      lastError = error instanceof Error ? error : new Error(String(error));
+      lastError.status = status || null;
+      lastError.category = category;
+      lastError.searchDiagnostics = diagnostics;
+
+      const retryable = isAbort || !status || isRetryableSearchStatus(status);
+      if (!retryable || attempt >= TAVILY_MAX_ATTEMPTS) {
+        throw lastError;
+      }
+
+      await sleep(retryDelayMs(attempt, response));
+    } finally {
+      clearTimeout(timeout);
     }
-
-    return {
-      ...data,
-
-      _query:
-        query
-    };
-  } catch (error) {
-    if (
-      error?.name ===
-      "AbortError"
-    ) {
-      throw new Error(
-        "Supplier search timed out."
-      );
-    }
-
-    throw error;
-  } finally {
-    clearTimeout(
-      timeout
-    );
   }
+
+  throw lastError || new Error("Supplier web search temporarily unavailable.");
 }
 
 function deduplicateResults(
