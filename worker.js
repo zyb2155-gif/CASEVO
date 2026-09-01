@@ -1,7 +1,8 @@
-/* CASEVO v4.2.4 Supplier Intelligence Upgrade */
+/* CASEVO v4.2.4.1 Supplier Intelligence Balance Patch */
+/* CASEVO v4.2.4.1 Supplier Intelligence Upgrade */
 /**
  * CASEVO AI SOURCING ENGINE
- * Version 4.2.4 — Supplier Discovery Engine Upgrade
+ * Version 4.2.4.1 — Supplier Discovery Engine Upgrade
  *
  * GET  /api/health
  * GET  /api/search-diagnostic
@@ -11,7 +12,7 @@
  * Required secret: TAVILY_API_KEY
  */
 
-const VERSION = "4.2.4";
+const VERSION = "4.2.4.1";
 const TAVILY_ENDPOINT = "https://api.tavily.com/search";
 const SEARCH_TIMEOUT_MS = 15000;
 const TAVILY_MAX_ATTEMPTS = 3;
