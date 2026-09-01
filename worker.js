@@ -1,6 +1,6 @@
 /**
  * CASEVO AI SOURCING ENGINE
- * Version 4.1.2 — Compatibility & Trust Fix
+ * Version 4.1.3 — Verified Identity Sync
  *
  * GET  /api/health
  * POST /api/sourcing
@@ -9,7 +9,7 @@
  * Required secret: TAVILY_API_KEY
  */
 
-const VERSION = "4.1.2";
+const VERSION = "4.1.3";
 const TAVILY_ENDPOINT = "https://api.tavily.com/search";
 const SEARCH_TIMEOUT_MS = 15000;
 const RESULTS_PER_QUERY = 10;
@@ -2942,7 +2942,11 @@ function isBadCompanyNameCandidate(
       "private label manufacturer",
       "private label shoes manufacturer",
       "private label manufacturers shoes leather goods",
-      "custom mens formal leather shoes manufacturer"
+      "custom mens formal leather shoes manufacturer",
+      "oem & odm footwear",
+      "oem/odm footwear",
+      "filter by organisation",
+      "filter by organization"
     ]);
 
   if (
@@ -2960,6 +2964,31 @@ function isBadCompanyNameCandidate(
     NON_IDENTITY_RE.test(
       name
     )
+  ) {
+    return true;
+  }
+
+  // v4.1.3 Verified Identity Sync:
+  // Never promote UI labels, capability headings or SEO product titles
+  // into the supplier identity field.
+  if (
+    /^(?:filter\s+by|sort\s+by|view\s+all|show\s+all|load\s+more)\b/i.test(name) &&
+    !COMPANY_SUFFIX_RE.test(name)
+  ) {
+    return true;
+  }
+
+  if (
+    /\b(?:oem\s*(?:&|\/|and)?\s*odm|odm\s*(?:&|\/|and)?\s*oem)\b/i.test(name) &&
+    /\b(?:footwear|shoes?|production|manufactur(?:e|er|ing)|factory|supplier)\b/i.test(name) &&
+    !COMPANY_SUFFIX_RE.test(name)
+  ) {
+    return true;
+  }
+
+  if (
+    /\b(?:shoe|shoes|footwear)\s+production\s+by\b/i.test(name) &&
+    !COMPANY_SUFFIX_RE.test(name)
   ) {
     return true;
   }
