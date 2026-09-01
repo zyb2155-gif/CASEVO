@@ -1,6 +1,6 @@
 /**
  * CASEVO AI SOURCING ENGINE
- * Version 4.1.4 — Verified Identity Authority
+ * Version 4.2.0 — Supplier Identity Intelligence
  *
  * GET  /api/health
  * POST /api/sourcing
@@ -9,7 +9,7 @@
  * Required secret: TAVILY_API_KEY
  */
 
-const VERSION = "4.1.4";
+const VERSION = "4.2.0";
 const TAVILY_ENDPOINT = "https://api.tavily.com/search";
 const SEARCH_TIMEOUT_MS = 15000;
 const RESULTS_PER_QUERY = 10;
@@ -312,7 +312,7 @@ export default {
         service: "CASEVO AI Sourcing",
         version: VERSION,
         engine:
-          "CASEVO Real Supplier Discovery + Human Verification + Company Identity Lock",
+          "CASEVO Real Supplier Discovery + Human Verification + Supplier Identity Intelligence",
         searchProvider: "Tavily",
         apiKeyConfigured: Boolean(env.TAVILY_API_KEY),
         timestamp: new Date().toISOString()
@@ -738,7 +738,19 @@ async function handleSupplierVerification(request, env) {
           name,
           domain,
           website,
-          product
+          product,
+          discoveryIdentity: {
+            identityType:
+              supplier.identityType,
+            authoritativeName:
+              supplier.authoritativeName ||
+              supplier.companyName ||
+              supplier.name,
+            identityConfidence:
+              supplier.identityConfidence,
+            identityEvidence:
+              supplier.identityEvidence
+          }
         }
       );
 
@@ -761,6 +773,18 @@ async function handleSupplierVerification(request, env) {
         companyIdentityConfirmed:
           evidence.companyName !==
           UNKNOWN_COMPANY,
+
+        identityType:
+          evidence.identityType,
+
+        authoritativeName:
+          evidence.authoritativeName,
+
+        identityConfidence:
+          evidence.identityConfidence,
+
+        identityEvidence:
+          evidence.identityEvidence,
 
         website:
           website ||
@@ -820,6 +844,21 @@ async function handleSupplierVerification(request, env) {
 
         companyName:
           evidence.companyName,
+
+        identityType:
+          evidence.identityType,
+
+        authoritativeName:
+          evidence.authoritativeName,
+
+        identityConfidence:
+          evidence.identityConfidence,
+
+        identityEvidence:
+          evidence.identityEvidence,
+
+        authoritySource:
+          evidence.authoritySource,
 
         officialWebsite:
           evidence.officialWebsite,
@@ -1115,10 +1154,44 @@ function buildVerificationEvidence(
       }
     );
 
+  const verifiedIdentity =
+    classifySupplierIdentity(
+      companyName,
+      {
+        legalName,
+        domainBrand,
+        brandCorroborated:
+          companyName !==
+            UNKNOWN_COMPANY &&
+          corroboratesBrand(
+            companyName,
+            {
+              title:
+                combined,
+              content:
+                combined
+            },
+            targetDomain
+          )
+      }
+    );
+
+  const authoritativeIdentity =
+    resolveAuthoritativeIdentity({
+      discovery:
+        target.discoveryIdentity ||
+        {},
+      verified:
+        verifiedIdentity
+    });
+
+  const authoritativeCompanyName =
+    authoritativeIdentity.authoritativeName;
+
   const location =
     inferLocation({
       title:
-        companyName,
+        authoritativeCompanyName,
       content:
         combined,
       url:
@@ -1207,18 +1280,20 @@ function buildVerificationEvidence(
     [];
 
   if (
-    companyName !==
+    authoritativeCompanyName !==
     UNKNOWN_COMPANY
   ) {
     score +=
-      legalName
+      authoritativeIdentity.identityType ===
+        "legal_company"
         ? 18
         : 12;
 
     signals.push(
-      legalName
+      authoritativeIdentity.identityType ===
+        "legal_company"
         ? "Legal company-name signal"
-        : "Company identity signal"
+        : "Brand / trade-name identity signal"
     );
   }
 
@@ -1357,12 +1432,13 @@ function buildVerificationEvidence(
   }
 
   const companyIdentity =
-    companyName !==
+    authoritativeCompanyName !==
     UNKNOWN_COMPANY
       ? (
-          legalName
-            ? "Confirmed public-web identity signal"
-            : "Partial identity evidence"
+          authoritativeIdentity.identityType ===
+            "legal_company"
+            ? "Confirmed public-web legal-company identity signal"
+            : "Confirmed public-web brand / trade-name identity signal"
         )
       : "Not confirmed";
 
@@ -1370,7 +1446,7 @@ function buildVerificationEvidence(
     targetDomain &&
     domainMatchCount >= 1 &&
     (
-      companyName !==
+      authoritativeCompanyName !==
       UNKNOWN_COMPANY ||
       companyCount >= 1
     )
@@ -1399,7 +1475,7 @@ function buildVerificationEvidence(
   const supplierType =
     detectSupplierType({
       title:
-        companyName,
+        authoritativeCompanyName,
       content:
         combined
     });
@@ -1435,7 +1511,7 @@ function buildVerificationEvidence(
               extractRelevantEvidence(
                 `${item.title || ""}. ${item.content || ""} ${item.raw_content || ""}`,
                 target.product ||
-                companyName
+                authoritativeCompanyName
               ),
               320
             )
@@ -1445,7 +1521,7 @@ function buildVerificationEvidence(
   const summaryParts = [
     companyIdentity !==
     "Not confirmed"
-      ? `Company identity signal found: ${companyName}.`
+      ? `Company identity signal found: ${authoritativeCompanyName}.`
       : "Company identity could not be confirmed from the retrieved public-web evidence.",
 
     manufacturingCapability !==
@@ -1469,7 +1545,23 @@ function buildVerificationEvidence(
     signals:
       unique(signals),
 
-    companyName,
+    companyName:
+      authoritativeCompanyName,
+
+    identityType:
+      authoritativeIdentity.identityType,
+
+    authoritativeName:
+      authoritativeIdentity.authoritativeName,
+
+    identityConfidence:
+      authoritativeIdentity.identityConfidence,
+
+    identityEvidence:
+      authoritativeIdentity.identityEvidence,
+
+    authoritySource:
+      authoritativeIdentity.authoritySource,
 
     domain:
       targetDomain,
@@ -1880,6 +1972,7 @@ function normalizeSupplierResults(
       result,
       domain,
       companyName,
+      gate,
       matchScore,
       verification,
       supplierType:
@@ -2219,6 +2312,278 @@ function normalizeBrand(
     .trim();
 }
 
+function classifySupplierIdentity(
+  candidate,
+  context = {}
+) {
+  const cleaned =
+    cleanCompanyCandidate(
+      candidate
+    );
+
+  if (
+    !cleaned ||
+    isBadCompanyNameCandidate(
+      cleaned
+    )
+  ) {
+    return {
+      identityType:
+        "unconfirmed",
+
+      authoritativeName:
+        UNKNOWN_COMPANY,
+
+      identityConfidence:
+        0,
+
+      identityEvidence:
+        "No reliable company or brand identity signal was confirmed."
+    };
+  }
+
+  const legalSignal =
+    COMPANY_SUFFIX_RE.test(
+      cleaned
+    ) ||
+    Boolean(
+      context.legalName &&
+      cleanCompanyCandidate(
+        context.legalName
+      ) === cleaned
+    );
+
+  if (
+    legalSignal
+  ) {
+    return {
+      identityType:
+        "legal_company",
+
+      authoritativeName:
+        cleaned,
+
+      identityConfidence:
+        context.legalName
+          ? 96
+          : 90,
+
+      identityEvidence:
+        "Legal company-name signal found in public-web evidence."
+    };
+  }
+
+  const domainBrand =
+    cleanCompanyCandidate(
+      context.domainBrand
+    );
+
+  const explicitBrand =
+    cleanCompanyCandidate(
+      context.brandName ||
+      context.explicitBrand
+    );
+
+  const normalizedCandidate =
+    normalizeBrand(
+      cleaned
+    );
+
+  const brandCorroborated =
+    Boolean(
+      normalizedCandidate &&
+      (
+        normalizeBrand(
+          domainBrand
+        ) ===
+          normalizedCandidate ||
+        normalizeBrand(
+          explicitBrand
+        ) ===
+          normalizedCandidate ||
+        context.brandCorroborated ===
+          true
+      )
+    );
+
+  const plausibleBrand =
+    cleaned.length <= 48 &&
+    !ROLE_END_RE.test(
+      cleaned
+    ) &&
+    !DESCRIPTOR_RE.test(
+      cleaned
+    );
+
+  if (
+    brandCorroborated &&
+    plausibleBrand
+  ) {
+    return {
+      identityType:
+        "brand",
+
+      authoritativeName:
+        cleaned,
+
+      identityConfidence:
+        68,
+
+      identityEvidence:
+        "Brand or trade-name signal corroborated by public-web/domain evidence; legal entity not confirmed."
+    };
+  }
+
+  return {
+    identityType:
+      "unconfirmed",
+
+    authoritativeName:
+      UNKNOWN_COMPANY,
+
+    identityConfidence:
+      20,
+
+    identityEvidence:
+      "Candidate identity was not strong enough to classify as a legal company or corroborated brand."
+  };
+}
+
+function resolveAuthoritativeIdentity({
+  discovery = {},
+  verified = {}
+} = {}) {
+  const normalizeIdentity =
+    value => {
+      const type =
+        [
+          "legal_company",
+          "brand",
+          "unconfirmed"
+        ].includes(
+          value?.identityType
+        )
+          ? value.identityType
+          : "unconfirmed";
+
+      const name =
+        type ===
+        "unconfirmed"
+          ? UNKNOWN_COMPANY
+          : cleanCompanyCandidate(
+              value?.authoritativeName
+            ) ||
+            UNKNOWN_COMPANY;
+
+      return {
+        identityType:
+          name === UNKNOWN_COMPANY
+            ? "unconfirmed"
+            : type,
+
+        authoritativeName:
+          name,
+
+        identityConfidence:
+          Number.isFinite(
+            Number(
+              value?.identityConfidence
+            )
+          )
+            ? Math.max(
+                0,
+                Math.min(
+                  100,
+                  Math.round(
+                    Number(
+                      value.identityConfidence
+                    )
+                  )
+                )
+              )
+            : 0,
+
+        identityEvidence:
+          clean(
+            value?.identityEvidence
+          )
+      };
+    };
+
+  const d =
+    normalizeIdentity(
+      discovery
+    );
+
+  const v =
+    normalizeIdentity(
+      verified
+    );
+
+  const options = [
+    v.identityType ===
+      "legal_company"
+      ? {
+          ...v,
+          authoritySource:
+            "verified"
+        }
+      : null,
+
+    v.identityType ===
+      "brand"
+      ? {
+          ...v,
+          authoritySource:
+            "verified"
+        }
+      : null,
+
+    d.identityType ===
+      "legal_company"
+      ? {
+          ...d,
+          authoritySource:
+            "discovery"
+        }
+      : null,
+
+    d.identityType ===
+      "brand"
+      ? {
+          ...d,
+          authoritySource:
+            "discovery"
+        }
+      : null
+  ].filter(Boolean);
+
+  return (
+    options[0] ||
+    {
+      identityType:
+        "unconfirmed",
+
+      authoritativeName:
+        UNKNOWN_COMPANY,
+
+      identityConfidence:
+        Math.max(
+          d.identityConfidence,
+          v.identityConfidence
+        ),
+
+      identityEvidence:
+        v.identityEvidence ||
+        d.identityEvidence ||
+        "No authoritative supplier identity was confirmed.",
+
+      authoritySource:
+        "none"
+    }
+  );
+}
+
 function buildSupplierRecord(
   candidate,
   analysis,
@@ -2232,19 +2597,62 @@ function buildSupplierRecord(
       result
     );
 
+  const identity =
+    classifySupplierIdentity(
+      candidate.companyName,
+      {
+        legalName:
+          candidate.gate?.legalName ||
+          "",
+
+        domainBrand:
+          candidate.gate?.brandDomain ||
+          companyNameFromDomain(
+            candidate.domain
+          ),
+
+        brandCorroborated:
+          candidate.companyName !==
+            UNKNOWN_COMPANY &&
+          corroboratesBrand(
+            candidate.companyName,
+            result,
+            candidate.domain
+          )
+      }
+    );
+
+  const displayName =
+    identity.authoritativeName;
+
+  const identityConfirmed =
+    identity.identityType !==
+    "unconfirmed";
+
   return {
     rank:
       index + 1,
 
     name:
-      candidate.companyName,
+      displayName,
 
     companyName:
-      candidate.companyName,
+      displayName,
 
     companyIdentityConfirmed:
-      candidate.companyName !==
-      UNKNOWN_COMPANY,
+      identityConfirmed,
+
+    identityType:
+      identity.identityType,
+
+    authoritativeName:
+      identity.authoritativeName,
+
+    identityConfidence:
+      identity.identityConfidence,
+
+    identityEvidence:
+      identity.identityEvidence,
 
     location:
       inferLocation(
@@ -2295,19 +2703,13 @@ function buildSupplierRecord(
         result
       ),
 
-    // v4.1.2 Trust Lock:
-    // discovery cards only surface contact details
-    // after company identity has at least been confirmed
-    // by the discovery identity layer.
     contactEmail:
-      candidate.companyName !==
-      UNKNOWN_COMPANY
+      identityConfirmed
         ? contact.email
         : "",
 
     contactPhone:
-      candidate.companyName !==
-      UNKNOWN_COMPANY
+      identityConfirmed
         ? contact.phone
         : "",
 
@@ -2321,10 +2723,13 @@ function buildSupplierRecord(
       "Public web search",
 
     note:
-      candidate.companyName ===
-      UNKNOWN_COMPANY
-        ? "Potential supplier domain found, but CASEVO could not confirm a reliable company name from public-web evidence. Independent identity verification is required."
-        : "Strict company-filter candidate. Company identity, capability, certifications, MOQ and commercial terms still require independent verification."
+      identity.identityType ===
+      "unconfirmed"
+        ? "Potential supplier domain found, but CASEVO could not confirm a reliable legal-company or brand identity from public-web evidence. Independent identity verification is required."
+        : identity.identityType ===
+          "brand"
+          ? "Brand / trade-name candidate found. The associated legal company identity still requires independent verification."
+          : "Strict company-filter candidate. Company identity, capability, certifications, MOQ and commercial terms still require independent verification."
   };
 }
 
