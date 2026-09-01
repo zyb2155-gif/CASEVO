@@ -1,6 +1,6 @@
 /**
  * CASEVO AI SOURCING ENGINE
- * Version 4.1.3 — Verified Identity Sync
+ * Version 4.1.4 — Verified Identity Authority
  *
  * GET  /api/health
  * POST /api/sourcing
@@ -9,7 +9,7 @@
  * Required secret: TAVILY_API_KEY
  */
 
-const VERSION = "4.1.3";
+const VERSION = "4.1.4";
 const TAVILY_ENDPOINT = "https://api.tavily.com/search";
 const SEARCH_TIMEOUT_MS = 15000;
 const RESULTS_PER_QUERY = 10;
@@ -811,6 +811,11 @@ async function handleSupplierVerification(request, env) {
           evidence.status,
 
         companyIdentity:
+          evidence.companyName !== UNKNOWN_COMPANY
+            ? evidence.companyName
+            : "Not confirmed",
+
+        identityStatus:
           evidence.companyIdentity,
 
         companyName:
@@ -867,6 +872,9 @@ async function handleSupplierVerification(request, env) {
           false,
 
         companyIdentityLock:
+          true,
+
+        verifiedIdentityAuthority:
           true,
 
         disclaimer:
@@ -2946,7 +2954,10 @@ function isBadCompanyNameCandidate(
       "oem & odm footwear",
       "oem/odm footwear",
       "filter by organisation",
-      "filter by organization"
+      "filter by organization",
+      "barefoot shoe customization menu",
+      "product catalog",
+      "product catalogue"
     ]);
 
   if (
@@ -2988,6 +2999,16 @@ function isBadCompanyNameCandidate(
 
   if (
     /\b(?:shoe|shoes|footwear)\s+production\s+by\b/i.test(name) &&
+    !COMPANY_SUFFIX_RE.test(name)
+  ) {
+    return true;
+  }
+
+  // v4.1.4 Verified Identity Authority:
+  // Reject navigation, catalogue and customization-page titles that
+  // describe a page function rather than a legal or brand identity.
+  if (
+    /\b(?:menu|catalog|catalogue|collection|collections|navigation|shop\s+all|product\s+list)\b/i.test(name) &&
     !COMPANY_SUFFIX_RE.test(name)
   ) {
     return true;
