@@ -1,6 +1,6 @@
 /**
  * CASEVO AI SOURCING ENGINE
- * Version 4.2.2 — Supplier Qualification Intelligence
+ * Version 4.2.3 — Supplier Decision Intelligence
  *
  * GET  /api/health
  * POST /api/sourcing
@@ -9,7 +9,7 @@
  * Required secret: TAVILY_API_KEY
  */
 
-const VERSION = "4.2.2";
+const VERSION = "4.2.3";
 const TAVILY_ENDPOINT = "https://api.tavily.com/search";
 const SEARCH_TIMEOUT_MS = 15000;
 const RESULTS_PER_QUERY = 10;
@@ -2613,7 +2613,7 @@ function calculateQualificationProfile(supplier = {}) {
   let score = 0;
   score += Math.round(relevance * 0.30);
   score += Math.round(verification * 0.25);
-  score += identityConfirmed ? (identityType === "legal" ? 15 : 10) : 0;
+  score += identityConfirmed ? (identityType === "legal_company" ? 15 : 10) : 0;
   score += hasManufacturing ? 10 : 0;
   score += hasMOQ ? 6 : 0;
   score += certifications.length ? 5 : 0;
@@ -2641,7 +2641,7 @@ function calculateQualificationProfile(supplier = {}) {
   const gaps = [];
   if (relevance >= 80) strengths.push("Strong product relevance");
   else if (relevance < 60) gaps.push("Product relevance is limited");
-  if (identityConfirmed) strengths.push(identityType === "legal" ? "Legal company identity signal" : "Company identity signal");
+  if (identityConfirmed) strengths.push(identityType === "legal_company" ? "Legal company identity signal" : "Brand / trade-name identity signal");
   else gaps.push("Company identity not confirmed");
   if (hasManufacturing) strengths.push("Manufacturing capability evidence");
   else gaps.push("Manufacturing capability needs confirmation");
@@ -2661,6 +2661,88 @@ function calculateQualificationProfile(supplier = {}) {
     "Do not prioritize unless stronger evidence is found";
 
   return { score, status, strengths, gaps, recommendedAction };
+}
+
+function calculateSupplierDecision(supplier = {}) {
+  const relevance = clampNumber(supplier.relevanceScore, 0, 100);
+  const match = clampNumber(supplier.matchScore, 0, 100);
+  const verification = clampNumber(supplier.verificationScore, 0, 100);
+  const qualification = clampNumber(supplier.qualificationScore, 0, 100);
+  const identityType = clean(supplier.identityType).toLowerCase();
+  const identityConfirmed = supplier.companyIdentityConfirmed === true;
+  const gaps = Array.isArray(supplier.qualificationGaps) ? supplier.qualificationGaps : [];
+
+  let score = Math.round(
+    relevance * 0.30 +
+    match * 0.20 +
+    verification * 0.20 +
+    qualification * 0.30
+  );
+
+  if (identityType === "legal_company") score += 8;
+  else if (identityType === "brand") score += 3;
+  else score -= 15;
+
+  score = Math.max(0, Math.min(100, score));
+
+  const riskFlags = [];
+  if (!identityConfirmed || identityType === "unconfirmed") riskFlags.push("Supplier identity is not confirmed");
+  if (identityType === "brand") riskFlags.push("Brand / trade name found; legal company still requires confirmation");
+  if (relevance < 60) riskFlags.push("Supplier-product relevance is below shortlist threshold");
+  if (verification < 60) riskFlags.push("Public-web verification evidence is limited");
+  for (const gap of gaps) {
+    if (/MOQ|certification|contact|export|manufacturing/i.test(clean(gap))) riskFlags.push(clean(gap));
+  }
+
+  let tier;
+  if (
+    identityType === "legal_company" &&
+    relevance >= 75 &&
+    qualification >= 70 &&
+    verification >= 60 &&
+    score >= 75
+  ) tier = "Priority shortlist";
+  else if (
+    identityConfirmed &&
+    relevance >= 60 &&
+    qualification >= 50 &&
+    score >= 58
+  ) tier = "Verify before shortlist";
+  else if (relevance >= 40 && score >= 40) tier = "Hold / secondary";
+  else tier = "Reject / insufficient evidence";
+
+  // An unconfirmed identity can never be auto-promoted to the priority tier.
+  if (identityType === "unconfirmed" && tier === "Priority shortlist") {
+    tier = "Verify before shortlist";
+  }
+
+  const decisionReasons = [];
+  if (relevance >= 80) decisionReasons.push("Strong product relevance");
+  else if (relevance >= 60) decisionReasons.push("Acceptable product relevance");
+  else decisionReasons.push("Product relevance requires caution");
+  if (identityType === "legal_company") decisionReasons.push("Legal-company identity signal available");
+  else if (identityType === "brand") decisionReasons.push("Brand / trade-name identity only");
+  else decisionReasons.push("Identity remains unconfirmed");
+  if (qualification >= 70) decisionReasons.push("Qualification evidence is comparatively strong");
+  else if (qualification >= 50) decisionReasons.push("Qualification evidence is incomplete but usable");
+  else decisionReasons.push("Qualification evidence is weak");
+  if (verification >= 70) decisionReasons.push("Public-web verification is strong");
+  else if (verification >= 50) decisionReasons.push("Public-web verification is moderate");
+  else decisionReasons.push("Public-web verification is limited");
+
+  const nextBestAction =
+    tier === "Priority shortlist" ? "Proceed to RFQ / sampling after final commercial due diligence" :
+    tier === "Verify before shortlist" ? "Verify legal identity and missing commercial evidence before shortlisting" :
+    tier === "Hold / secondary" ? "Keep as a secondary candidate and investigate the highest-risk evidence gaps" :
+    "Do not prioritize unless materially stronger supplier evidence is found";
+
+  return {
+    score,
+    tier,
+    reasons: unique(decisionReasons),
+    riskFlags: unique(riskFlags),
+    nextBestAction
+  };
 }
 
 function clampNumber(value, min, max) {
@@ -2839,6 +2921,14 @@ function buildSupplierRecord(
   supplierRecord.qualificationGaps = qualification.gaps;
   supplierRecord.recommendedAction = qualification.recommendedAction;
   supplierRecord.qualification = qualification;
+
+  const decision = calculateSupplierDecision(supplierRecord);
+  supplierRecord.decisionScore = decision.score;
+  supplierRecord.decisionTier = decision.tier;
+  supplierRecord.decisionReasons = decision.reasons;
+  supplierRecord.riskFlags = decision.riskFlags;
+  supplierRecord.nextBestAction = decision.nextBestAction;
+  supplierRecord.decision = decision;
 
   return supplierRecord;
 }
