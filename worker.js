@@ -1,6 +1,6 @@
 /**
  * CASEVO AI SOURCING ENGINE
- * Version 4.2.1 — Supplier Relevance Intelligence
+ * Version 4.2.2 — Supplier Qualification Intelligence
  *
  * GET  /api/health
  * POST /api/sourcing
@@ -9,7 +9,7 @@
  * Required secret: TAVILY_API_KEY
  */
 
-const VERSION = "4.2.1";
+const VERSION = "4.2.2";
 const TAVILY_ENDPOINT = "https://api.tavily.com/search";
 const SEARCH_TIMEOUT_MS = 15000;
 const RESULTS_PER_QUERY = 10;
@@ -2595,6 +2595,80 @@ function resolveAuthoritativeIdentity({
   );
 }
 
+
+function calculateQualificationProfile(supplier = {}) {
+  const identityConfirmed = supplier.companyIdentityConfirmed === true;
+  const identityType = clean(supplier.identityType).toLowerCase();
+  const relevance = clampNumber(supplier.relevanceScore, 0, 100);
+  const verification = clampNumber(supplier.verificationScore, 0, 100);
+  const certifications = Array.isArray(supplier.certifications) ? supplier.certifications : [];
+  const moq = clean(supplier.moq);
+  const hasMOQ = !!moq && !/not confirmed|not determined|unknown/i.test(moq);
+  const hasContact = !!clean(supplier.contactEmail) || !!clean(supplier.contactPhone);
+  const hasLocation = !!clean(supplier.location) && !/not determined|unknown/i.test(clean(supplier.location));
+  const signals = Array.isArray(supplier.verificationSignals) ? supplier.verificationSignals : [];
+  const hasManufacturing = signals.some(x => /manufacturing capability/i.test(clean(x)));
+  const hasCommercial = signals.some(x => /commercial capability|export/i.test(clean(x)));
+
+  let score = 0;
+  score += Math.round(relevance * 0.30);
+  score += Math.round(verification * 0.25);
+  score += identityConfirmed ? (identityType === "legal" ? 15 : 10) : 0;
+  score += hasManufacturing ? 10 : 0;
+  score += hasMOQ ? 6 : 0;
+  score += certifications.length ? 5 : 0;
+  score += hasCommercial ? 4 : 0;
+  score += hasContact ? 3 : 0;
+  score += hasLocation ? 2 : 0;
+  score = Math.max(0, Math.min(100, score));
+
+  const criticalEvidenceComplete =
+    identityConfirmed &&
+    relevance >= 70 &&
+    verification >= 70 &&
+    hasManufacturing &&
+    (hasMOQ || hasCommercial || hasContact);
+
+  let status =
+    score >= 80 && criticalEvidenceComplete ? "QUALIFIED" :
+    score >= 60 ? "POTENTIAL" :
+    score >= 40 ? "WEAK" :
+    "REJECT";
+
+  if (!identityConfirmed && status === "QUALIFIED") status = "POTENTIAL";
+
+  const strengths = [];
+  const gaps = [];
+  if (relevance >= 80) strengths.push("Strong product relevance");
+  else if (relevance < 60) gaps.push("Product relevance is limited");
+  if (identityConfirmed) strengths.push(identityType === "legal" ? "Legal company identity signal" : "Company identity signal");
+  else gaps.push("Company identity not confirmed");
+  if (hasManufacturing) strengths.push("Manufacturing capability evidence");
+  else gaps.push("Manufacturing capability needs confirmation");
+  if (hasMOQ) strengths.push("MOQ evidence found");
+  else gaps.push("MOQ not confirmed");
+  if (certifications.length) strengths.push("Certification evidence found");
+  else gaps.push("Certifications not confirmed");
+  if (hasCommercial) strengths.push("Commercial / export capability evidence");
+  else gaps.push("Export capability not confirmed");
+  if (hasContact) strengths.push("Public contact evidence found");
+  else gaps.push("Contact not confirmed");
+
+  const recommendedAction =
+    status === "QUALIFIED" ? "Proceed to RFQ / sampling after final due diligence" :
+    status === "POTENTIAL" ? "Verify missing commercial evidence before RFQ / sampling" :
+    status === "WEAK" ? "Further supplier verification required before outreach" :
+    "Do not prioritize unless stronger evidence is found";
+
+  return { score, status, strengths, gaps, recommendedAction };
+}
+
+function clampNumber(value, min, max) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return min;
+  return Math.max(min, Math.min(max, n));
+}
+
 function buildSupplierRecord(
   candidate,
   analysis,
@@ -2640,7 +2714,7 @@ function buildSupplierRecord(
     identity.identityType !==
     "unconfirmed";
 
-  return {
+  const supplierRecord = {
     rank:
       index + 1,
 
@@ -2757,6 +2831,16 @@ function buildSupplierRecord(
           ? "Brand / trade-name candidate found. The associated legal company identity still requires independent verification."
           : "Strict company-filter candidate. Company identity, capability, certifications, MOQ and commercial terms still require independent verification."
   };
+
+  const qualification = calculateQualificationProfile(supplierRecord);
+  supplierRecord.qualificationScore = qualification.score;
+  supplierRecord.qualificationStatus = qualification.status;
+  supplierRecord.qualificationStrengths = qualification.strengths;
+  supplierRecord.qualificationGaps = qualification.gaps;
+  supplierRecord.recommendedAction = qualification.recommendedAction;
+  supplierRecord.qualification = qualification;
+
+  return supplierRecord;
 }
 
 function calculateDiscoveryVerification(
