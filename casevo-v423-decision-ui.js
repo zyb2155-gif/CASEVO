@@ -1,6 +1,6 @@
 /**
- * CASEVO v4.2.3 — Supplier Decision UI
- * Additive frontend layer. Preserves script.js and v4.2.0 identity intelligence.
+ * CASEVO v4.2.3.1 — Supplier Decision UI Hotfix
+ * Fixes recursive/stray Decision panel rendering from v4.2.3.
  */
 (() => {
   "use strict";
@@ -29,8 +29,11 @@
     return d.score !== null || d.tier || d.reasons.length || d.risks.length || d.action;
   }
 
+  function decisionKey(d) {
+    return JSON.stringify([d.score, d.tier, d.reasons, d.risks, d.action]);
+  }
+
   function decisionMarkup(d) {
-    if (!hasDecision(d)) return "";
     const score = d.score !== null ? `<strong>${esc(d.score)}/100</strong>` : "";
     const reasons = d.reasons.length
       ? `<div class="casevo-decision-row"><b>Why</b><span>${d.reasons.map(esc).join(" · ")}</span></div>` : "";
@@ -80,43 +83,60 @@
 
   function capturePayload(payload) {
     const arrays = supplierArrays(payload);
-    if (arrays.length) latestSuppliers = arrays[0];
+    if (!arrays.length) return;
+    latestSuppliers = arrays[0];
     scheduleApply();
+  }
+
+  function findVerifyButton(card) {
+    return [...card.querySelectorAll("button")].find(
+      (button) => /verify supplier/i.test(button.textContent || "")
+    ) || null;
   }
 
   function cards() {
     const grid = document.getElementById("supplierGrid");
     if (!grid) return [];
-    return [...grid.children].filter(el => el.nodeType === 1);
+
+    // Remove pollution left by v4.2.3 where Decision panels were inserted as grid siblings.
+    grid.querySelectorAll(":scope > .casevo-decision-panel").forEach((panel) => panel.remove());
+
+    return [...grid.children].filter((el) =>
+      el.nodeType === 1 &&
+      !el.classList.contains("casevo-decision-panel") &&
+      Boolean(findVerifyButton(el))
+    );
+  }
+
+  function renderDecision(card, supplier) {
+    const d = decisionFromSupplier(supplier);
+    if (!hasDecision(d)) return;
+
+    const key = decisionKey(d);
+    const existing = card.querySelector(":scope > .casevo-decision-panel");
+    if (existing && existing.dataset.casevoDecisionKey === key) return;
+
+    if (existing) existing.remove();
+
+    const verifyButton = findVerifyButton(card);
+    if (!verifyButton) return;
+
+    // Always insert INSIDE the supplier card. Never use closest('div'), which can
+    // resolve to the supplier card itself and create a new direct child of the grid.
+    verifyButton.insertAdjacentHTML("beforebegin", decisionMarkup(d));
+    const inserted = card.querySelector(":scope > .casevo-decision-panel") ||
+      verifyButton.previousElementSibling;
+    if (inserted?.classList?.contains("casevo-decision-panel")) {
+      inserted.dataset.casevoDecisionKey = key;
+    }
   }
 
   function applyDecisionUI() {
     installStyles();
+    if (!latestSuppliers.length) return;
     const supplierCards = cards();
-    if (!supplierCards.length || !latestSuppliers.length) return;
-
-    supplierCards.forEach((card, index) => {
-      const supplier = latestSuppliers[index];
-      if (!supplier) return;
-      const d = decisionFromSupplier(supplier);
-      if (!hasDecision(d)) return;
-
-      let panel = card.querySelector(".casevo-decision-panel");
-      const markup = decisionMarkup(d);
-      if (panel) {
-        panel.outerHTML = markup;
-        return;
-      }
-
-      const verifyButton = [...card.querySelectorAll("button")].find(
-        b => /verify supplier/i.test(b.textContent || "")
-      );
-      if (verifyButton) {
-        const holder = verifyButton.closest("div") || verifyButton;
-        holder.insertAdjacentHTML("beforebegin", markup);
-      } else {
-        card.insertAdjacentHTML("beforeend", markup);
-      }
+    supplierCards.slice(0, latestSuppliers.length).forEach((card, index) => {
+      renderDecision(card, latestSuppliers[index]);
     });
   }
 
@@ -127,7 +147,7 @@
     const tick = () => {
       applyDecisionUI();
       tries += 1;
-      if (tries < 12) timer = setTimeout(tick, 180);
+      if (tries < 8) timer = setTimeout(tick, 200);
     };
     tick();
   }
@@ -137,21 +157,17 @@
     const response = await nativeFetch(...args);
     try {
       const url = typeof args[0] === "string" ? args[0] : args[0]?.url || "";
-      if (/\/api\/(sourcing|verify-supplier)(?:\?|$)/.test(url)) {
+      if (/\/api\/sourcing(?:\?|$)/.test(url)) {
         response.clone().json().then(capturePayload).catch(() => {});
       }
     } catch (_) {}
     return response;
   };
 
-  const observer = new MutationObserver(() => {
-    if (latestSuppliers.length) scheduleApply();
-  });
-
   function start() {
     installStyles();
-    const grid = document.getElementById("supplierGrid");
-    if (grid) observer.observe(grid, { childList: true, subtree: true });
+    // No MutationObserver here: the previous observer reacted to its own DOM
+    // changes and recursively scheduled more Decision rendering.
   }
 
   if (document.readyState === "loading") {
