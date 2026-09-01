@@ -1,6 +1,6 @@
 /**
  * CASEVO AI SOURCING ENGINE
- * Version 4.2.3.6 — Direct Tavily Diagnostic
+ * Version 4.2.3.7 — Supplier Discovery Engine Upgrade
  *
  * GET  /api/health
  * GET  /api/search-diagnostic
@@ -10,7 +10,7 @@
  * Required secret: TAVILY_API_KEY
  */
 
-const VERSION = "4.2.3.6";
+const VERSION = "4.2.3.7";
 const TAVILY_ENDPOINT = "https://api.tavily.com/search";
 const SEARCH_TIMEOUT_MS = 15000;
 const TAVILY_MAX_ATTEMPTS = 3;
@@ -391,7 +391,7 @@ async function handleSearchDiagnostic(env) {
     return jsonResponse(
       {
         ok: false,
-        service: "CASEVO Direct Tavily Diagnostic",
+        service: "CASEVO Supplier Discovery Engine Upgrade",
         version: VERSION,
         provider: "Tavily",
         diagnosticQuery,
@@ -424,7 +424,7 @@ async function handleSearchDiagnostic(env) {
 
     return jsonResponse({
       ok: true,
-      service: "CASEVO Direct Tavily Diagnostic",
+      service: "CASEVO Supplier Discovery Engine Upgrade",
       version: VERSION,
       provider: "Tavily",
       diagnosticQuery,
@@ -451,7 +451,7 @@ async function handleSearchDiagnostic(env) {
     return jsonResponse(
       {
         ok: false,
-        service: "CASEVO Direct Tavily Diagnostic",
+        service: "CASEVO Supplier Discovery Engine Upgrade",
         version: VERSION,
         provider: "Tavily",
         diagnosticQuery,
