@@ -1,5 +1,5 @@
 /**
- * CASEVO v4.2.3.2 — Verification Decision Sync
+ * CASEVO v4.2.3.5 — Diagnostic UI Hotfix
  * Keeps one Decision panel per supplier and refreshes it after Human Verification.
  */
 (() => {
@@ -14,6 +14,54 @@
 
   const list = (value) => Array.isArray(value) ? value.filter(Boolean) : [];
   const clean = (value) => String(value ?? "").trim();
+
+
+  function diagnosticMarkup(payload = {}) {
+    const diag = payload.searchDiagnostics || {};
+    const category = clean(diag.category || "");
+    const status = diag.status ?? "";
+    const attempts = diag.attempts ?? "";
+    const details = clean(payload.details || "");
+    const message = clean(payload.diagnosticMessage || "");
+
+    if (!category && !status && !attempts && !details && !message) return "";
+
+    return `<div class="casevo-search-diagnostic">
+      <div><b>Error Category</b><span>${esc(category || "unknown")}</span></div>
+      <div><b>HTTP Status</b><span>${esc(status || "none")}</span></div>
+      <div><b>Attempts</b><span>${esc(attempts || "unknown")}</span></div>
+      ${details ? `<div class="casevo-diagnostic-wide"><b>Details</b><span>${esc(details)}</span></div>` : ""}
+      ${message ? `<div class="casevo-diagnostic-wide"><b>Diagnostic</b><span>${esc(message)}</span></div>` : ""}
+    </div>`;
+  }
+
+  function renderSearchDiagnostic(payload = {}) {
+    if (payload?.ok !== false) return;
+    if (clean(payload?.error) !== "Supplier web search temporarily unavailable.") return;
+
+    let tries = 0;
+    const tick = () => {
+      const results = document.getElementById("results");
+      if (!results) return;
+      const existing = results.querySelector(".casevo-search-diagnostic");
+      if (existing) existing.remove();
+
+      const errorText = [...results.querySelectorAll("*")].find((el) =>
+        clean(el.textContent) === "Supplier web search temporarily unavailable."
+      );
+
+      const markup = diagnosticMarkup(payload);
+      if (errorText && markup) {
+        const box = errorText.closest("div");
+        (box || errorText).insertAdjacentHTML("beforeend", markup);
+        return;
+      }
+
+      tries += 1;
+      if (tries < 12) setTimeout(tick, 180);
+    };
+    tick();
+  }
 
   function decisionFromSupplier(supplier = {}) {
     const nested = supplier.decision || {};
@@ -66,6 +114,11 @@
       .casevo-decision-row{display:grid;grid-template-columns:110px 1fr;gap:10px;padding-top:9px;margin-top:9px;border-top:1px solid rgba(35,31,26,.12);font-size:11px;line-height:1.45}
       .casevo-decision-row b{font-size:9px;letter-spacing:.08em;text-transform:uppercase}
       .casevo-risk b{color:#a43627}
+      .casevo-search-diagnostic{margin-top:14px;padding-top:12px;border-top:1px solid rgba(164,54,39,.3);display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:9px 14px;font-size:11px;line-height:1.45}
+      .casevo-search-diagnostic>div{display:flex;flex-direction:column;gap:4px}
+      .casevo-search-diagnostic b{font-size:9px;letter-spacing:.08em;text-transform:uppercase;color:#a43627}
+      .casevo-diagnostic-wide{grid-column:1/-1}
+      @media(max-width:640px){.casevo-search-diagnostic{grid-template-columns:1fr}}
       @media(max-width:640px){.casevo-decision-row{grid-template-columns:1fr}.casevo-decision-head strong{margin-left:0}}
     `;
     document.head.appendChild(style);
@@ -246,7 +299,10 @@
 
     try {
       if (/\/api\/sourcing(?:\?|$)/.test(url)) {
-        response.clone().json().then(captureSourcingPayload).catch(() => {});
+        response.clone().json().then((payload) => {
+          captureSourcingPayload(payload);
+          renderSearchDiagnostic(payload);
+        }).catch(() => {});
       } else if (/\/api\/verify-supplier(?:\?|$)/.test(url)) {
         response.clone().json()
           .then((payload) => captureVerificationPayload(payload, requestSupplier))
