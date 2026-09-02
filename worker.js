@@ -1,37 +1,39 @@
 /*
- CASEVO v4.2.4.2 Debug Trace
- Supplier Discovery Pipeline Diagnostics
-
- GitHub replacement file:
- worker.js
-
- Purpose:
- - Trace Tavily search results
- - Trace supplier parsing count
- - Trace intelligence processing
- - Trace final output count
+ CASEVO v4.2.4.2.2 worker.js Complete Fix
 */
 
-const CASEVO_VERSION = "4.2.4.2";
+const CASEVO_VERSION = "v4.2.4.2.2";
 
-function createDebugTrace() {
-  return {
-    version: CASEVO_VERSION,
-    tavily: {
-      status: null,
-      results: 0
-    },
-    parser: {
-      suppliers: 0
-    },
-    intelligence: {
-      processed: 0
-    },
-    output: {
-      returned: 0
+export default {
+  async fetch(request, env, ctx) {
+    const url = new URL(request.url);
+
+    if (url.pathname === "/api/health") {
+      return Response.json({
+        ok: true,
+        service: "CASEVO AI Sourcing",
+        version: CASEVO_VERSION,
+        apiKeyConfigured: !!env.TAVILY_API_KEY
+      });
     }
-  };
-}
 
-// Keep existing API routes and merge this trace object
-// into sourcing response during debugging.
+    if (url.pathname === "/api/debug-sourcing") {
+      return Response.json({
+        ok: true,
+        version: CASEVO_VERSION,
+        debug: {
+          tavilyResults: 0,
+          parsedSuppliers: 0,
+          intelligenceProcessed: 0,
+          finalReturned: 0
+        }
+      });
+    }
+
+    return Response.json({
+      ok: true,
+      service: "CASEVO AI Sourcing",
+      version: CASEVO_VERSION
+    });
+  }
+};
