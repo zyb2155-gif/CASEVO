@@ -1,4 +1,4 @@
-/* CASEVO v4.2.4.8 Frontend Render Hardening */
+/* CASEVO v4.2.4.9 Supplier Card Structure Recovery */
 (() => {
   "use strict";
   const byId = id => document.getElementById(id);
@@ -29,17 +29,22 @@
       addText(grid, "p", "No supplier candidates were returned. Refine the requirement and try again.", "supplier-empty");
       return;
     }
-    for (const supplier of suppliers) {
+    suppliers.forEach((supplier, index) => {
       const card = document.createElement("article");
-      card.className = "supplier-card";
+      card.className = "supplier supplier-card";
+      card.dataset.casevoSupplierIndex = String(index);
       const top = document.createElement("div");
-      top.className = "supplier-card-top";
+      top.className = "supplier-top supplier-card-top";
       addText(top, "span", supplier.country || "Location not confirmed", "eyebrow");
-      addText(top, "strong", `${Number.isFinite(Number(supplier.score)) ? Math.round(Number(supplier.score)) : 0} / 100`, "supplier-score");
+      addText(top, "strong", `${Number.isFinite(Number(supplier.score)) ? Math.round(Number(supplier.score)) : 0} / 100`, "score-number supplier-score");
       card.appendChild(top);
-      addText(card, "h4", supplier.name || "Supplier candidate");
-      addText(card, "p", supplier.summary || supplier.evidence || "Review source evidence before qualification.");
-      addText(card, "small", supplier.verificationStatus || "Human verification required", "verification-status");
+      const main = document.createElement("div");
+      main.className = "casevo-supplier-main";
+      addText(main, "h4", supplier.name || "Supplier candidate", "casevo-supplier-name");
+      addText(main, "div", supplier.type || "Supplier candidate", "casevo-supplier-type");
+      addText(main, "p", supplier.summary || supplier.evidence || "Review source evidence before qualification.", "supplier-summary");
+      addText(main, "small", supplier.verificationStatus || "Human verification required", "verified verification-status");
+      card.appendChild(main);
       const actions = document.createElement("div");
       actions.className = "supplier-actions";
       if (/^https?:\/\//i.test(supplier.sourceUrl || "")) {
@@ -56,7 +61,7 @@
       });
       card.appendChild(actions);
       grid.appendChild(card);
-    }
+    });
   }
   function showError(message) {
     const results = byId("results");
