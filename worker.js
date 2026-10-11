@@ -1,5 +1,5 @@
-/* CASEVO v4.2.4.7 Frontend Recovery + Supplier Discovery Restore */
-const VERSION = "v4.2.4.7";
+/* CASEVO v4.2.4.8 Frontend Render Hardening */
+const VERSION = "v4.2.4.8";
 const TAVILY_SEARCH_URL = "https://api.tavily.com/search";
 const json = (body, status = 200) => Response.json(body, { status, headers: { "Cache-Control": "no-store" } });
 function clean(value, fallback = "") { return typeof value === "string" && value.trim() ? value.trim() : fallback; }
@@ -65,3 +65,4 @@ export default {
     return json({ ok: true, service: "CASEVO AI Sourcing", version: VERSION });
   }
 };
+
