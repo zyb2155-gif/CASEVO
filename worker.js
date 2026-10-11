@@ -1,5 +1,5 @@
-/* CASEVO v4.2.4.9 Supplier Card Structure Recovery */
-const VERSION = "v4.2.4.9";
+/* CASEVO v4.2.5.0 Supplier Relevance Ranking */
+const VERSION = "v4.2.5.0";
 const TAVILY_SEARCH_URL = "https://api.tavily.com/search";
 const json = (body, status = 200) => Response.json(body, { status, headers: { "Cache-Control": "no-store" } });
 function clean(value, fallback = "") { return typeof value === "string" && value.trim() ? value.trim() : fallback; }
@@ -27,6 +27,34 @@ function truncateText(value, limit = 240) {
   const clipped = text.slice(0, limit - 1).replace(/\s+\S*$/, "").trim();
   return `${clipped || text.slice(0, limit - 1).trim()}…`;
 }
+function sourceDomain(value) {
+  try { return new URL(value).hostname.toLowerCase().replace(/^www\./, ""); }
+  catch { return ""; }
+}
+function classifySource(result) {
+  const url = safeUrl(result?.url).toLowerCase();
+  const text = `${clean(result?.title)} ${sanitizeSearchText(result?.content)}`.toLowerCase();
+  if (/(?:made-in-china|alibaba|globalsources|dhgate|1688)\./.test(url)) return "marketplace";
+  if (/\/(?:blog|news|article|guide|directory)(?:\/|$)/.test(url) || /\b(?:top\s*\d+|best\s+.+suppliers?|supplier\s+list|supply\s+chain\s+guide|directory|market trends)\b/.test(text)) return "directory_article";
+  const signals = [
+    /\bmanufacturer|manufacturing\b/.test(text),
+    /\bfactory|production line|workshop\b/.test(text),
+    /\boem|odm|private label\b/.test(text),
+    /\/(?:about|about-us|factory|manufacturing|capabilities)(?:[/?#-]|$)/.test(url)
+  ].filter(Boolean).length;
+  return signals >= 2 ? "manufacturer" : "unknown";
+}
+function evidenceScore(result, sourceType) {
+  const url = safeUrl(result?.url).toLowerCase();
+  const text = `${clean(result?.title)} ${sanitizeSearchText(result?.content)}`.toLowerCase();
+  let score = { manufacturer: 55, unknown: 32, marketplace: 18, directory_article: 5 }[sourceType] || 20;
+  if (/\bmanufacturer|manufacturing\b/.test(text)) score += 12;
+  if (/\bfactory|production line|workshop\b/.test(text)) score += 12;
+  if (/\boem|odm|private label\b/.test(text)) score += 8;
+  if (/\bexport|usa|europe|international market\b/.test(text)) score += 5;
+  if (/\/(?:about|about-us|factory|manufacturing|capabilities)(?:[/?#-]|$)/.test(url)) score += 8;
+  return Math.max(0, Math.min(100, score));
+}
 function extractCompanyName(title, content, index) {
   const companyPattern = /([A-Z][A-Za-z0-9&'().,-]*(?:\s+[A-Z][A-Za-z0-9&'().,-]*){1,8}\s+(?:Co\.,?\s*Ltd\.?|Company Limited|Limited|Ltd\.?|Inc\.?|LLC|Corporation))/i;
   const companyLine = String(content || "").split(/\r?\n/)
@@ -49,18 +77,39 @@ function normalizeSupplier(result, index) {
   const content = sanitizeSearchText(result?.content);
   const name = extractCompanyName(title, result?.content, index);
   const tavilyScore = Number(result?.score);
+  const matchScore = Number.isFinite(tavilyScore) ? Math.max(0, Math.min(100, Math.round(tavilyScore * 100))) : 60;
+  const sourceType = classifySource(result);
+  const evidence = evidenceScore(result, sourceType);
   return {
     name,
     authoritativeName: name,
     identityType: /(?:Co\.,?\s*Ltd\.?|Company Limited|Limited|Ltd\.?|Inc\.?|LLC|Corporation)$/i.test(name) ? "legal_company" : "unconfirmed",
     country: /\b(vietnam|viet nam)\b/i.test(content) ? "Vietnam" : /\bchina|chinese\b/i.test(content) ? "China" : "Location not confirmed",
-    type: "Supplier candidate",
-    score: Number.isFinite(tavilyScore) ? Math.max(0, Math.min(100, Math.round(tavilyScore * 100))) : 70,
+    type: sourceType === "manufacturer" ? "Manufacturer evidence" : sourceType === "marketplace" ? "Marketplace fallback" : "Supplier candidate",
+    sourceType,
+    domain: sourceDomain(result?.url),
+    matchScore,
+    evidenceScore: evidence,
+    score: Math.round(matchScore * 0.55 + evidence * 0.45),
     summary: truncateText(content || "Source found; capability evidence requires human review"),
     evidence: content.slice(0, 700),
     sourceUrl: safeUrl(result?.url),
     verificationStatus: "Human verification required"
   };
+}
+function rankSupplierCandidates(results) {
+  const candidates = results.map(normalizeSupplier)
+    .filter(supplier => supplier.sourceUrl && supplier.sourceType !== "directory_article")
+    .sort((a, b) => b.score - a.score || b.evidenceScore - a.evidenceScore);
+  const domains = new Set();
+  const unique = [];
+  for (const supplier of candidates) {
+    const key = supplier.domain || supplier.sourceUrl;
+    if (domains.has(key)) continue;
+    domains.add(key);
+    unique.push(supplier);
+  }
+  return unique.slice(0, 8);
 }
 async function searchSuppliers(env, query) {
   if (!env?.TAVILY_API_KEY) throw new Error("Tavily API key is not configured");
@@ -81,7 +130,7 @@ async function handleSourcing(request, env) {
   const brief = buildBrief(body);
   try {
     const results = await searchSuppliers(env, buildSearchQuery(body, brief));
-    const suppliers = results.map(normalizeSupplier).filter(supplier => supplier.sourceUrl);
+    const suppliers = rankSupplierCandidates(results);
     return json({ ok: true, version: VERSION, brief, suppliers, matches: suppliers });
   } catch (error) {
     console.error("CASEVO Tavily search failed", error);
