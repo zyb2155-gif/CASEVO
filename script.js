@@ -1,4 +1,4 @@
-/* CASEVO v4.2.4.7 Frontend Recovery + Supplier Discovery Restore */
+/* CASEVO v4.2.4.8 Frontend Render Hardening */
 (() => {
   "use strict";
   const byId = id => document.getElementById(id);
@@ -68,7 +68,20 @@
       addText(grid, "p", message, "supplier-error");
     }
   }
+  function showPending() {
+    const results = byId("results");
+    const brief = byId("brief");
+    const grid = byId("supplierGrid");
+    if (results) results.hidden = false;
+    if (byId("resultTitle")) byId("resultTitle").textContent = "Searching suppliers…";
+    if (brief) brief.innerHTML = "";
+    if (grid) {
+      grid.innerHTML = "";
+      addText(grid, "p", "Searching live supplier evidence. This may take a few seconds.", "supplier-pending");
+    }
+  }
   async function runCASEVOSourcing() {
+    showPending();
     const response = await fetch("/api/sourcing", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -120,3 +133,4 @@
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", initializeSourcingForm);
   else initializeSourcingForm();
 })();
+
