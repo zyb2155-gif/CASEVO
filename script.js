@@ -1,4 +1,4 @@
-/* CASEVO v4.2.4.9 Supplier Card Structure Recovery */
+/* CASEVO v4.2.5.0 Supplier Relevance Ranking */
 (() => {
   "use strict";
   const byId = id => document.getElementById(id);
@@ -43,6 +43,15 @@
       addText(main, "h4", supplier.name || "Supplier candidate", "casevo-supplier-name");
       addText(main, "div", supplier.type || "Supplier candidate", "casevo-supplier-type");
       addText(main, "p", supplier.summary || supplier.evidence || "Review source evidence before qualification.", "supplier-summary");
+      const meta = document.createElement("div");
+      meta.className = "supplier-meta";
+      for (const [label, value] of [["Match score", supplier.matchScore], ["Evidence score", supplier.evidenceScore]]) {
+        const row = document.createElement("div");
+        addText(row, "span", label);
+        addText(row, "strong", Number.isFinite(Number(value)) ? `${Math.round(Number(value))} / 100` : "Pending");
+        meta.appendChild(row);
+      }
+      main.appendChild(meta);
       addText(main, "small", supplier.verificationStatus || "Human verification required", "verified verification-status");
       card.appendChild(main);
       const actions = document.createElement("div");
