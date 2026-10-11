@@ -16,10 +16,16 @@ function sanitizeSearchText(value) {
     .replace(/^#{1,6}\s*/gm, "")
     .replace(/^\s*\|?\s*:?-{3,}:?\s*(?:\|\s*:?-{3,}:?\s*)+\|?\s*$/gm, " ")
     .replace(/\|/g, " · ")
-    .replace(/\b(?:Contact Supplier|Send Inquiry|Chat Now)\b/gi, " ")
+    .replace(/\b(?:Contact Supplier|Send Inquiry|Chat Now|Talk to me)\b[!\s\"']*/gi, " ")
     .replace(/\s*[·]\s*(?:[·]\s*)+/g, " · ")
     .replace(/\s+/g, " ")
     .trim();
+}
+function truncateText(value, limit = 240) {
+  const text = clean(value);
+  if (text.length <= limit) return text;
+  const clipped = text.slice(0, limit - 1).replace(/\s+\S*$/, "").trim();
+  return `${clipped || text.slice(0, limit - 1).trim()}…`;
 }
 function extractCompanyName(title, content, index) {
   const companyPattern = /([A-Z][A-Za-z0-9&'().,-]*(?:\s+[A-Z][A-Za-z0-9&'().,-]*){1,8}\s+(?:Co\.,?\s*Ltd\.?|Company Limited|Limited|Ltd\.?|Inc\.?|LLC|Corporation))/i;
@@ -50,7 +56,7 @@ function normalizeSupplier(result, index) {
     country: /\b(vietnam|viet nam)\b/i.test(content) ? "Vietnam" : /\bchina|chinese\b/i.test(content) ? "China" : "Location not confirmed",
     type: "Supplier candidate",
     score: Number.isFinite(tavilyScore) ? Math.max(0, Math.min(100, Math.round(tavilyScore * 100))) : 70,
-    summary: (content || "Source found; capability evidence requires human review").slice(0, 240),
+    summary: truncateText(content || "Source found; capability evidence requires human review"),
     evidence: content.slice(0, 700),
     sourceUrl: safeUrl(result?.url),
     verificationStatus: "Human verification required"
