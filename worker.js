@@ -1,5 +1,5 @@
-/* CASEVO v4.2.5.0 Supplier Relevance Ranking */
-const VERSION = "v4.2.5.0";
+/* CASEVO v4.2.6.0 AI Preliminary Supplier Verification */
+const VERSION = "v4.2.6.0";
 const TAVILY_SEARCH_URL = "https://api.tavily.com/search";
 const json = (body, status = 200) => Response.json(body, { status, headers: { "Cache-Control": "no-store" } });
 function clean(value, fallback = "") { return typeof value === "string" && value.trim() ? value.trim() : fallback; }
@@ -137,11 +137,74 @@ async function handleSourcing(request, env) {
     return json({ ok: false, version: VERSION, brief, suppliers: [], error: error.message || "Supplier search failed" }, 502);
   }
 }
+function buildVerificationQuery(supplier, brief) {
+  const name = clean(supplier?.authoritativeName, clean(supplier?.name, "supplier"));
+  const domain = clean(supplier?.domain, sourceDomain(supplier?.sourceUrl));
+  const product = clean(brief?.product, "manufacturing capability");
+  return `"${name}" ${domain} official website company factory manufacturer OEM ODM ${product}`;
+}
+function verificationSignals(results, supplier) {
+  const expectedDomain = clean(supplier?.domain, sourceDomain(supplier?.sourceUrl));
+  const signals = [];
+  if (results.some(result => expectedDomain && result.domain === expectedDomain)) signals.push("Official-domain evidence found");
+  if (results.some(result => result.sourceType === "manufacturer")) signals.push("Manufacturing or factory evidence found");
+  if (results.some(result => /\boem|odm|private label\b/i.test(`${result.summary} ${result.evidence}`))) signals.push("OEM / ODM capability evidence found");
+  if (results.some(result => /\bexport|usa|europe|international market\b/i.test(`${result.summary} ${result.evidence}`))) signals.push("Export-market evidence found");
+  return signals;
+}
+async function handleVerification(request, env) {
+  let body;
+  try { body = await request.json(); }
+  catch { return json({ ok: false, version: VERSION, error: "Request body must be valid JSON" }, 400); }
+  const supplier = body?.supplier;
+  if (!supplier || (!clean(supplier.name) && !clean(supplier.authoritativeName))) return json({ ok: false, version: VERSION, error: "A supplier name is required" }, 400);
+  try {
+    const rawResults = await searchSuppliers(env, buildVerificationQuery(supplier, body?.brief || {}));
+    const results = rankSupplierCandidates(rawResults);
+    const signals = verificationSignals(results, supplier);
+    const expectedDomain = clean(supplier.domain, sourceDomain(supplier.sourceUrl));
+    const official = results.find(result => expectedDomain && result.domain === expectedDomain) || results.find(result => result.sourceType === "manufacturer") || results[0];
+    const authoritativeName = clean(official?.authoritativeName, clean(supplier.authoritativeName, supplier.name));
+    const identityType = official?.identityType === "legal_company" ? "legal_company" : "unconfirmed";
+    const officialWebsite = official?.sourceUrl ? new URL(official.sourceUrl).origin + "/" : "";
+    const verificationScore = Math.max(0, Math.min(100, Math.round((official?.evidenceScore || 20) + (signals.length * 3))));
+    const riskFlags = [];
+    if (!officialWebsite) riskFlags.push("Official website not confirmed");
+    if (!signals.some(signal => /manufacturing/i.test(signal))) riskFlags.push("Manufacturing capability evidence is limited");
+    riskFlags.push("Human validation is still required");
+    const matchScore = Number.isFinite(Number(supplier.matchScore)) ? Number(supplier.matchScore) : 50;
+    const decisionScore = Math.round(matchScore * 0.35 + verificationScore * 0.65);
+    const decisionTier = decisionScore >= 75 ? "Promising — human review required" : decisionScore >= 55 ? "Review evidence — human validation required" : "Insufficient evidence — investigate manually";
+    const nextBestAction = "Complete CASEVO human verification before contacting or qualifying this supplier";
+    const verification = { identityType, authoritativeName, officialWebsite, score: verificationScore, status: "AI preliminary verification", signals };
+    const decision = { score: decisionScore, tier: decisionTier, reasons: signals, riskFlags, nextBestAction };
+    const verifiedSupplier = {
+      ...supplier,
+      authoritativeName,
+      identityType,
+      officialWebsite,
+      verificationScore,
+      verificationStatus: "AI preliminary verification",
+      verificationSignals: signals,
+      decisionScore,
+      decisionTier,
+      decisionReasons: signals,
+      riskFlags,
+      nextBestAction,
+      decision
+    };
+    return json({ ok: true, version: VERSION, supplier: verifiedSupplier, verification, decision, evidence: results.slice(0, 4) });
+  } catch (error) {
+    console.error("CASEVO supplier verification failed", error);
+    return json({ ok: false, version: VERSION, error: error.message || "Supplier verification failed" }, 502);
+  }
+}
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
     if (url.pathname === "/api/health" && request.method === "GET") return json({ ok: true, service: "CASEVO AI Sourcing", version: VERSION, apiKeyConfigured: Boolean(env?.TAVILY_API_KEY) });
     if (url.pathname === "/api/sourcing" && request.method === "POST") return handleSourcing(request, env);
+    if (url.pathname === "/api/verify-supplier" && request.method === "POST") return handleVerification(request, env);
     if (url.pathname.startsWith("/api/")) return json({ ok: false, version: VERSION, error: "Not found" }, 404);
     return json({ ok: true, service: "CASEVO AI Sourcing", version: VERSION });
   }
