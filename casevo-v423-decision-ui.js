@@ -228,7 +228,7 @@
   }
 
   function decisionAnchor(card) {
-    return [...card.querySelectorAll("button")].find((button) =>
+    return card.querySelector(".supplier-actions") || [...card.querySelectorAll("button")].find((button) =>
       /verify supplier|verification complete/i.test(button.textContent || "")
     ) || card.querySelector(".casevo-decision-panel");
   }
@@ -323,3 +323,4 @@
     start();
   }
 })();
+
