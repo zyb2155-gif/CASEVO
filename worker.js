@@ -146,7 +146,7 @@ function buildVerificationQuery(supplier, brief) {
 function verificationSignals(results, supplier) {
   const expectedDomain = clean(supplier?.domain, sourceDomain(supplier?.sourceUrl));
   const signals = [];
-  if (results.some(result => expectedDomain && result.domain === expectedDomain)) signals.push("Official-domain evidence found");
+  if (results.some(result => expectedDomain && result.domain === expectedDomain && result.sourceType === "manufacturer")) signals.push("Official-domain evidence found");
   if (results.some(result => result.sourceType === "manufacturer")) signals.push("Manufacturing or factory evidence found");
   if (results.some(result => /\boem|odm|private label\b/i.test(`${result.summary} ${result.evidence}`))) signals.push("OEM / ODM capability evidence found");
   if (results.some(result => /\bexport|usa|europe|international market\b/i.test(`${result.summary} ${result.evidence}`))) signals.push("Export-market evidence found");
@@ -163,7 +163,7 @@ async function handleVerification(request, env) {
     const results = rankSupplierCandidates(rawResults);
     const signals = verificationSignals(results, supplier);
     const expectedDomain = clean(supplier.domain, sourceDomain(supplier.sourceUrl));
-    const official = results.find(result => expectedDomain && result.domain === expectedDomain) || results.find(result => result.sourceType === "manufacturer") || results[0];
+    const official = results.find(result => expectedDomain && result.domain === expectedDomain && result.sourceType === "manufacturer") || results.find(result => result.sourceType === "manufacturer");
     const authoritativeName = clean(official?.authoritativeName, clean(supplier.authoritativeName, supplier.name));
     const identityType = official?.identityType === "legal_company" ? "legal_company" : "unconfirmed";
     const officialWebsite = official?.sourceUrl ? new URL(official.sourceUrl).origin + "/" : "";
