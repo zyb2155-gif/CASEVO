@@ -1,4 +1,4 @@
-/* CASEVO v4.2.5.0 Supplier Relevance Ranking */
+/* CASEVO v4.2.6.0 AI Preliminary Supplier Verification */
 (() => {
   "use strict";
   const byId = id => document.getElementById(id);
@@ -21,7 +21,7 @@
       container.appendChild(item);
     }
   }
-  function renderSuppliers(suppliers = []) {
+  function renderSuppliers(suppliers = [], brief = {}) {
     const grid = byId("supplierGrid");
     if (!grid) return;
     grid.innerHTML = "";
@@ -62,11 +62,38 @@
         source.target = "_blank";
         source.rel = "noopener noreferrer";
       }
-      const verify = addText(actions, "a", "Verify Supplier →", "button button-red");
-      verify.href = "#contact";
-      verify.addEventListener("click", () => {
-        const need = byId("contactNeed");
-        if (need && !need.value) need.value = `Please verify supplier: ${supplier.name || "Supplier candidate"}`;
+      const verify = addText(actions, "button", "Verify Supplier →", "button button-red");
+      verify.type = "button";
+      verify.addEventListener("click", async () => {
+        if (verify.disabled) return;
+        verify.disabled = true;
+        verify.textContent = "Verifying supplier…";
+        let status = card.querySelector(".supplier-verification-status");
+        if (!status) {
+          status = document.createElement("p");
+          status.className = "supplier-verification-status";
+          card.insertBefore(status, actions);
+        }
+        status.textContent = "Searching public identity and manufacturing evidence…";
+        try {
+          const response = await fetch("/api/verify-supplier", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ supplier, brief })
+          });
+          const data = await response.json().catch(() => ({}));
+          if (!response.ok || data.ok === false) throw new Error(data.error || `Verification failed (${response.status})`);
+          const verificationLabel = main.querySelector(".verification-status");
+          if (verificationLabel) verificationLabel.textContent = data.verification?.status || "AI preliminary verification";
+          status.className = "supplier-verification-status verification-complete";
+          status.textContent = "AI preliminary verification completed. Human validation is still required.";
+          verify.textContent = "Verification complete";
+        } catch (error) {
+          status.className = "supplier-verification-status verification-error";
+          status.textContent = error.message || "Verification unavailable. Please try again.";
+          verify.disabled = false;
+          verify.textContent = "Retry verification →";
+        }
       });
       card.appendChild(actions);
       grid.appendChild(card);
@@ -104,7 +131,7 @@
     const data = await response.json().catch(() => ({}));
     if (!response.ok || data.ok === false) throw new Error(data.error || `Request failed (${response.status})`);
     renderBrief(data.brief);
-    renderSuppliers(data.suppliers);
+    renderSuppliers(data.suppliers, data.brief);
     const results = byId("results");
     if (results) {
       results.hidden = false;
