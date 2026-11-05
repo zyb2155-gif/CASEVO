@@ -1,6 +1,7 @@
-/* CASEVO v4.2.7.0 Local Supplier Verification Report */
+/* CASEVO v4.2.8.0 Verified Supplier Comparison Report */
 (() => {
   "use strict";
+  const comparisonSelection = new Map();
   const byId = id => document.getElementById(id);
   const valueOf = id => (byId(id)?.value || "").trim();
   const escapeHtml = value => String(value ?? "")
@@ -94,6 +95,133 @@
     link.remove();
     setTimeout(() => URL.revokeObjectURL(blobUrl), 1_000);
   }
+  function comparisonKey(supplier = {}) {
+    return supplier.sourceUrl || supplier.authoritativeName || supplier.name || "supplier";
+  }
+  function mergedVerifiedSupplier(entry) {
+    return { ...entry.supplier, ...(entry.result.supplier || {}) };
+  }
+  function resetComparison() {
+    comparisonSelection.forEach(entry => {
+      if (entry.button?.isConnected) {
+        entry.button.disabled = false;
+        entry.button.textContent = "Add to comparison";
+      }
+    });
+    comparisonSelection.clear();
+    byId("casevoComparisonBar")?.remove();
+  }
+  function renderComparisonBar(message = "") {
+    let bar = byId("casevoComparisonBar");
+    if (!comparisonSelection.size) {
+      bar?.remove();
+      return;
+    }
+    if (!bar) {
+      bar = document.createElement("aside");
+      bar.id = "casevoComparisonBar";
+      bar.className = "casevo-comparison-bar";
+      bar.setAttribute("aria-live", "polite");
+      document.body.appendChild(bar);
+    }
+    bar.innerHTML = "";
+    const heading = document.createElement("div");
+    heading.className = "casevo-comparison-heading";
+    addText(heading, "strong", "Verified supplier comparison");
+    addText(heading, "span", `${comparisonSelection.size} of 5 selected`);
+    bar.appendChild(heading);
+    const chips = document.createElement("div");
+    chips.className = "casevo-comparison-chips";
+    comparisonSelection.forEach((entry, key) => {
+      const supplier = mergedVerifiedSupplier(entry);
+      const chip = document.createElement("span");
+      addText(chip, "span", supplier.name || "Supplier");
+      const remove = addText(chip, "button", "×");
+      remove.type = "button";
+      remove.setAttribute("aria-label", `Remove ${supplier.name || "supplier"}`);
+      remove.addEventListener("click", () => {
+        if (entry.button?.isConnected) {
+          entry.button.disabled = false;
+          entry.button.textContent = "Add to comparison";
+        }
+        comparisonSelection.delete(key);
+        renderComparisonBar();
+      });
+      chips.appendChild(chip);
+    });
+    bar.appendChild(chips);
+    if (message) addText(bar, "p", message, "casevo-comparison-message");
+    const download = addText(bar, "button", "Download comparison report", "button button-red casevo-comparison-download");
+    download.type = "button";
+    download.disabled = comparisonSelection.size < 2;
+    download.title = download.disabled ? "Select at least 2 verified suppliers" : "Download local comparison report";
+    download.addEventListener("click", downloadComparisonReport);
+    bar.appendChild(download);
+  }
+  function addToComparison(supplier, brief, result, button) {
+    const verifiedSupplier = { ...supplier, ...(result.supplier || {}) };
+    const key = comparisonKey(verifiedSupplier);
+    if (comparisonSelection.has(key)) return;
+    if (comparisonSelection.size >= 5) {
+      renderComparisonBar("Maximum 5 suppliers can be compared. Remove one to add another.");
+      return;
+    }
+    comparisonSelection.set(key, { supplier, brief, result, button });
+    button.disabled = true;
+    button.textContent = "Added to comparison";
+    renderComparisonBar();
+  }
+  function comparisonReportHtml(entries) {
+    const suppliers = entries.map(mergedVerifiedSupplier);
+    const value = (entry, supplier, field) => {
+      const verification = entry.result.verification || {};
+      const decision = entry.result.decision || {};
+      if (field === "verificationScore") return verification.score ?? supplier.verificationScore;
+      if (field === "decisionScore") return decision.score ?? supplier.decisionScore;
+      return supplier[field];
+    };
+    const scoreFields = ["matchScore", "evidenceScore", "verificationScore", "decisionScore"];
+    const highs = Object.fromEntries(scoreFields.map(field => [field, Math.max(...entries.map((entry, index) => Number(value(entry, suppliers[index], field)) || 0))]));
+    const cells = renderer => entries.map((entry, index) => `<td>${renderer(entry, suppliers[index], index)}</td>`).join("");
+    const scoreRow = (label, field) => `<tr><th>${escapeHtml(label)}</th>${cells((entry, supplier) => {
+      const raw = value(entry, supplier, field);
+      const highest = Number(raw) === highs[field] ? ' <small class="highest">Highest score</small>' : "";
+      return `${escapeHtml(scoreText(raw))}${highest}`;
+    })}</tr>`;
+    const textRow = (label, renderer) => `<tr><th>${escapeHtml(label)}</th>${cells((entry, supplier, index) => escapeHtml(renderer(entry, supplier, index) || "Not available"))}</tr>`;
+    const linkRow = `<tr><th>Source</th>${cells((entry, supplier) => {
+      const url = /^https?:\/\//i.test(supplier.sourceUrl || "") ? supplier.sourceUrl : "";
+      return url ? `<a href="${escapeHtml(url)}">${escapeHtml(url)}</a>` : "Not available";
+    })}</tr>`;
+    const brief = entries[0]?.brief || {};
+    return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>CASEVO Supplier Comparison Report</title><style>
+body{margin:0;background:#faf7f1;color:#231f1a;font:13px/1.5 Arial,sans-serif}.page{max-width:1200px;margin:auto;padding:42px}.eyebrow{color:#a43627;font-size:10px;font-weight:700;letter-spacing:.15em;text-transform:uppercase}h1{font:34px Georgia,serif;margin:8px 0 16px}.notice{border:1px solid #a43627;background:#fff4f1;padding:13px;font-weight:700}.brief{margin:20px 0;padding:16px;border:1px solid #d8d0c5;background:white}.table-wrap{overflow-x:auto;margin-top:22px}table{width:100%;min-width:820px;border-collapse:collapse;background:white}th,td{border:1px solid #d8d0c5;padding:12px;text-align:left;vertical-align:top}th{background:#f3ede4;width:150px}thead th{background:#231f1a;color:white}.highest{display:inline-block;margin-left:5px;color:#a43627;font-weight:700}a{color:#a43627;overflow-wrap:anywhere}.actions{margin-top:25px}.actions button{padding:10px 16px;border:0;background:#a43627;color:white;font-weight:700}.meta{color:#6d645a;font-size:11px;margin-top:24px}@media(max-width:650px){.page{padding:20px}}@media print{.page{max-width:none;padding:10mm}.actions{display:none}.table-wrap{overflow:visible}table{font-size:10px;min-width:0}th,td{padding:6px}}
+</style></head><body><main class="page"><div class="eyebrow">CASEVO · Verified supplier comparison</div><h1>CASEVO Supplier Comparison Report</h1>
+<p class="notice">AI preliminary verification — not a final endorsement. Human validation is still required before commercial engagement.</p>
+<div class="brief"><b>Purchase requirement:</b> ${escapeHtml(brief.description || brief.product || "Not specified")} · ${escapeHtml(brief.quantity || "Quantity not specified")} · ${escapeHtml(brief.destination || "Destination not specified")}</div>
+<div class="table-wrap"><table><thead><tr><th>Comparison</th>${suppliers.map(supplier => `<th>${escapeHtml(supplier.name || "Supplier")}</th>`).join("")}</tr></thead><tbody>
+${textRow("Location", (entry, supplier) => supplier.country)}${textRow("Supplier type", (entry, supplier) => supplier.type)}
+${scoreRow("Match score", "matchScore")}${scoreRow("Evidence score", "evidenceScore")}${scoreRow("Verification score", "verificationScore")}${scoreRow("Decision score", "decisionScore")}
+${textRow("Decision", (entry, supplier) => entry.result.decision?.tier || supplier.decisionTier)}
+${textRow("Evidence", (entry, supplier) => (entry.result.decision?.reasons || supplier.decisionReasons || []).join(" · "))}
+${textRow("Risk flags", (entry, supplier) => (entry.result.decision?.riskFlags || supplier.riskFlags || []).join(" · "))}
+${textRow("Next action", (entry, supplier) => entry.result.decision?.nextBestAction || supplier.nextBestAction)}${linkRow}
+</tbody></table></div><div class="actions"><button type="button" onclick="window.print()">Print / Save as PDF</button></div>
+<p class="meta">Generated locally in your browser on ${escapeHtml(new Date().toISOString())}. CASEVO did not upload this report.</p></main></body></html>`;
+  }
+  function downloadComparisonReport() {
+    if (comparisonSelection.size < 2) return;
+    const html = comparisonReportHtml([...comparisonSelection.values()]);
+    const blobUrl = URL.createObjectURL(new Blob([html], { type: "text/html;charset=utf-8" }));
+    const link = document.createElement("a");
+    link.href = blobUrl;
+    link.download = `CASEVO-Supplier-Comparison-${new Date().toISOString().slice(0, 10)}.html`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(blobUrl), 1_000);
+  }
   function renderSuppliers(suppliers = [], brief = {}) {
     const grid = byId("supplierGrid");
     if (!grid) return;
@@ -166,6 +294,11 @@
             report.type = "button";
             report.addEventListener("click", () => downloadVerificationReport(supplier, brief, data));
           }
+          if (!actions.querySelector(".supplier-comparison-add")) {
+            const compare = addText(actions, "button", "Add to comparison", "button supplier-comparison-add");
+            compare.type = "button";
+            compare.addEventListener("click", () => addToComparison(supplier, brief, data, compare));
+          }
         } catch (error) {
           status.className = "supplier-verification-status verification-error";
           status.textContent = error.message || "Verification unavailable. Please try again.";
@@ -188,6 +321,7 @@
     }
   }
   function showPending() {
+    resetComparison();
     const results = byId("results");
     const brief = byId("brief");
     const grid = byId("supplierGrid");
