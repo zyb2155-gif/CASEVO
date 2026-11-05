@@ -299,6 +299,7 @@ ${textRow("Next action", (entry, supplier) => entry.result.decision?.nextBestAct
             compare.type = "button";
             compare.addEventListener("click", () => addToComparison(supplier, brief, data, compare));
           }
+          window.dispatchEvent(new CustomEvent("casevo:verification-complete", { detail: { supplier, brief, result: data, card, actions } }));
         } catch (error) {
           status.className = "supplier-verification-status verification-error";
           status.textContent = error.message || "Verification unavailable. Please try again.";
@@ -322,6 +323,7 @@ ${textRow("Next action", (entry, supplier) => entry.result.decision?.nextBestAct
   }
   function showPending() {
     resetComparison();
+    window.dispatchEvent(new CustomEvent("casevo:sourcing-start"));
     const results = byId("results");
     const brief = byId("brief");
     const grid = byId("supplierGrid");
