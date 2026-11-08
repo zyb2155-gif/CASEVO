@@ -270,6 +270,15 @@ body{margin:0;background:#faf7f1;color:#231f1a;font:13px/1.5 Arial,sans-serif}.p
     compare.type = "button";
     compare.disabled = selectedKeys.size < 2 || selectedKeys.size > 5;
     compare.addEventListener("click", downloadShortlistComparison);
+    const createRfq = addText(drawer, "button", "Create RFQ", "button casevo-shortlist-rfq");
+    createRfq.type = "button";
+    createRfq.disabled = selectedKeys.size < 1 || selectedKeys.size > 5;
+    createRfq.addEventListener("click", () => {
+      const items = documentState.items.filter(item => selectedKeys.has(item.key));
+      if (items.length < 1 || items.length > 5) return false;
+      window.dispatchEvent(new CustomEvent("casevo:rfq-create", { detail: { items: items.map(item => structuredClone(item)) } }));
+      return true;
+    });
   }
   function upsertVerified(detail) {
     const supplier = { ...(detail.supplier || {}), ...(detail.result?.supplier || {}) };
