@@ -11,7 +11,9 @@
   const escapeHtml = value => String(value ?? "").replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&#39;");
   function normalizeNumber(value) {
     if (value === "" || value === null || value === undefined) return "";
-    const number = Number(String(value).replaceAll(",", "").trim());
+    const text = String(value).trim();
+    if (!/^-?(?:\d+|\d{1,3}(?:,\d{3})+)(?:\.\d+)?$/.test(text)) return NaN;
+    const number = Number(text.replaceAll(",", ""));
     return Number.isFinite(number) ? number : NaN;
   }
   function containsForbidden(value) {
