@@ -1,5 +1,5 @@
-/* CASEVO v4.3.0 Local RFQ Workspace */
-const VERSION = "v4.3.0";
+/* CASEVO v4.4.0 Local Quote Comparison Workspace */
+const VERSION = "v4.4.0";
 const TAVILY_SEARCH_URL = "https://api.tavily.com/search";
 const json = (body, status = 200) => Response.json(body, { status, headers: { "Cache-Control": "no-store" } });
 function clean(value, fallback = "") { return typeof value === "string" && value.trim() ? value.trim() : fallback; }
