@@ -279,6 +279,12 @@ body{margin:0;background:#faf7f1;color:#231f1a;font:13px/1.5 Arial,sans-serif}.p
       window.dispatchEvent(new CustomEvent("casevo:rfq-create", { detail: { items: items.map(item => structuredClone(item)) } }));
       return true;
     });
+    const manageQuotes = addText(drawer, "button", "Manage Quotes", "button casevo-shortlist-quotes");
+    manageQuotes.type = "button";
+    manageQuotes.disabled = !documentState.items.length;
+    manageQuotes.addEventListener("click", () => {
+      window.dispatchEvent(new CustomEvent("casevo:quotes-open", { detail: { items: documentState.items.map(item => structuredClone(item)) } }));
+    });
   }
   function upsertVerified(detail) {
     const supplier = { ...(detail.supplier || {}), ...(detail.result?.supplier || {}) };
